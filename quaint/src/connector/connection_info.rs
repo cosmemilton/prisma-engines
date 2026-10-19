@@ -1,4 +1,5 @@
 #![cfg_attr(target_arch = "wasm32", allow(unused_imports))]
+// Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 #![cfg_attr(not(target_arch = "wasm32"), allow(clippy::large_enum_variant))]
 
 #[cfg(any(
@@ -105,6 +106,12 @@ impl ConnectionInfo {
             SqlFamily::Postgres => Ok(ConnectionInfo::Native(NativeConnectionInfo::Postgres(
                 super::PostgresUrl::new_native(url)?,
             ))),
+            #[cfg(feature = "firebird")]
+            SqlFamily::Firebird => Err(Error::builder(ErrorKind::DatabaseUrlIsInvalid(
+                "Firebird connections require a driver adapter; native Firebird connections are not supported."
+                    .to_owned(),
+            ))
+            .build()),
             #[allow(unreachable_patterns)]
             _ => unreachable!(),
         }
@@ -414,6 +421,8 @@ pub enum SqlFamily {
     Sqlite,
     #[cfg(feature = "mssql")]
     Mssql,
+    #[cfg(feature = "firebird")]
+    Firebird,
 }
 
 impl SqlFamily {
@@ -428,6 +437,8 @@ impl SqlFamily {
             SqlFamily::Sqlite => "sqlite",
             #[cfg(feature = "mssql")]
             SqlFamily::Mssql => "mssql",
+            #[cfg(feature = "firebird")]
+            SqlFamily::Firebird => "firebird",
         }
     }
 
@@ -440,6 +451,8 @@ impl SqlFamily {
             "postgres" | "postgresql" => Some(SqlFamily::Postgres),
             #[cfg(feature = "mysql")]
             "mysql" => Some(SqlFamily::Mysql),
+            #[cfg(feature = "firebird")]
+            "firebird" => Some(SqlFamily::Firebird),
             _ => None,
         }
     }
@@ -455,6 +468,8 @@ impl SqlFamily {
             SqlFamily::Sqlite => Some(999),
             #[cfg(feature = "mssql")]
             SqlFamily::Mssql => Some(1000),
+            #[cfg(feature = "firebird")]
+            SqlFamily::Firebird => Some(1),
         }
     }
 
@@ -501,6 +516,10 @@ impl SqlFamily {
             SqlFamily::Sqlite => 999,
             #[cfg(feature = "mssql")]
             SqlFamily::Mssql => 2098,
+            #[cfg(feature = "firebird")]
+            // A conservative connector budget; statement/BLR size can impose a lower
+            // practical limit than Firebird's parameter count. Adapters may override it.
+            SqlFamily::Firebird => 1000,
         }
     }
 
@@ -556,6 +575,18 @@ impl SqlFamily {
     pub fn is_mssql(&self) -> bool {
         false
     }
+
+    /// True, if family is Firebird.
+    #[cfg(feature = "firebird")]
+    pub fn is_firebird(&self) -> bool {
+        matches!(self, SqlFamily::Firebird)
+    }
+
+    /// True, if family is Firebird.
+    #[cfg(not(feature = "firebird"))]
+    pub fn is_firebird(&self) -> bool {
+        false
+    }
 }
 
 impl fmt::Display for SqlFamily {
@@ -566,8 +597,72 @@ impl fmt::Display for SqlFamily {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(any(feature = "sqlite-native", feature = "mysql-native"))]
+    #[cfg(any(feature = "sqlite-native", feature = "mysql-native", feature = "firebird"))]
     use super::*;
+
+    #[test]
+    #[cfg(feature = "firebird")]
+    fn firebird_family_has_its_own_identity() {
+        let family = SqlFamily::from_scheme("firebird").unwrap();
+
+        assert_eq!(family, SqlFamily::Firebird);
+        assert_eq!(family.as_str(), "firebird");
+        assert_eq!(family.to_string(), "firebird");
+        assert!(SqlFamily::scheme_is_supported("firebird"));
+        assert!(family.is_firebird());
+        assert!(!family.is_postgres());
+        assert!(!family.is_mysql());
+        assert!(!family.is_sqlite());
+        assert!(!family.is_mssql());
+
+        #[cfg(feature = "postgresql")]
+        assert!(!SqlFamily::Postgres.is_firebird());
+        #[cfg(feature = "mysql")]
+        assert!(!SqlFamily::Mysql.is_firebird());
+        #[cfg(feature = "sqlite")]
+        assert!(!SqlFamily::Sqlite.is_firebird());
+        #[cfg(feature = "mssql")]
+        assert!(!SqlFamily::Mssql.is_firebird());
+    }
+
+    #[test]
+    #[cfg(feature = "firebird")]
+    fn firebird_family_uses_conservative_batch_limits() {
+        assert_eq!(SqlFamily::Firebird.max_insert_rows(), Some(1));
+        assert_eq!(SqlFamily::Firebird.default_max_bind_values(), 1000);
+    }
+
+    #[test]
+    #[cfg(feature = "firebird")]
+    fn external_firebird_connection_preserves_family_and_adapter_limit() {
+        let conn_info =
+            ConnectionInfo::External(ExternalConnectionInfo::new(SqlFamily::Firebird, None, Some(100), false));
+
+        assert_eq!(conn_info.sql_family(), SqlFamily::Firebird);
+        assert_eq!(conn_info.max_insert_rows(), Some(1));
+        assert_eq!(conn_info.max_bind_values(), 100);
+        assert!(conn_info.as_native().is_none());
+    }
+
+    #[test]
+    #[cfg(all(
+        feature = "firebird",
+        any(
+            feature = "sqlite-native",
+            feature = "mysql-native",
+            feature = "postgresql-native",
+            feature = "mssql-native"
+        )
+    ))]
+    fn native_firebird_connection_returns_an_explicit_error() {
+        let err = ConnectionInfo::from_url("firebird://localhost/test.fdb").unwrap_err();
+
+        assert!(matches!(
+            err.kind(),
+            ErrorKind::DatabaseUrlIsInvalid(message)
+                if message.contains("Firebird connections require a driver adapter")
+        ));
+    }
 
     #[test]
     #[cfg(feature = "sqlite-native")]

@@ -1,14 +1,19 @@
+// Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 // `clippy::empty_docs` is required because of the `wasm-bindgen` crate.
 #![allow(clippy::empty_docs)]
 
-use std::future::Future;
-use std::time::Duration;
+use std::{
+    cell::RefCell,
+    future::Future,
+    rc::Rc,
+    task::{Poll, Waker},
+    time::Duration,
+};
 
 pub use crate::common::datetime::*;
 use derive_more::Display;
-use js_sys::{Date, Function, Promise, Reflect};
+use js_sys::{Date, Function, Reflect};
 use wasm_bindgen::prelude::*;
-use wasm_bindgen_futures::JsFuture;
 
 use crate::common::timeout::TimeoutError;
 
@@ -20,7 +25,10 @@ extern "C" {
     fn now(this: &Performance) -> f64;
 
     #[wasm_bindgen(js_name = setTimeout)]
-    fn set_timeout(closure: &Function, millis: u32) -> f64;
+    fn set_timeout(closure: &Function, millis: u32) -> JsValue;
+
+    #[wasm_bindgen(js_name = clearTimeout)]
+    fn clear_timeout(handle: &JsValue);
 
 }
 
@@ -78,37 +86,70 @@ impl SystemTimeError {
 
 impl std::error::Error for SystemTimeError {}
 
-struct JsFutureTimeoutWrapper {
-    future: JsFuture,
+#[derive(Default)]
+struct SleepState {
+    fired: bool,
+    waker: Option<Waker>,
 }
 
-impl Future for JsFutureTimeoutWrapper {
-    type Output = Result<JsValue, JsValue>;
+struct JsSleep {
+    handle: JsValue,
+    // Own the callback until the timer is cleared. A canceled unresolved Promise
+    // would otherwise retain its Rust-backed callbacks until it settles.
+    _callback: Closure<dyn FnMut()>,
+    state: Rc<RefCell<SleepState>>,
+}
 
-    fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
-        // Pin the internal future and delegate polling to it.
-        // SAFETY: We are the only owner of this future, so it is safe to get a mutable reference.
-        unsafe {
-            let this = self.get_unchecked_mut();
-            let future = std::pin::Pin::new_unchecked(&mut this.future);
-            future.poll(cx)
+impl Future for JsSleep {
+    type Output = ();
+
+    fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<()> {
+        let mut state = self.state.borrow_mut();
+        if state.fired {
+            Poll::Ready(())
+        } else {
+            state.waker = Some(cx.waker().clone());
+            Poll::Pending
         }
     }
 }
 
-impl JsFutureTimeoutWrapper {
-    fn new(future: JsFuture) -> Self {
-        Self { future }
+impl JsSleep {
+    fn new(duration: Duration) -> Self {
+        let state = Rc::new(RefCell::new(SleepState::default()));
+        let callback_state = Rc::clone(&state);
+        let callback = Closure::wrap(Box::new(move || {
+            let waker = {
+                let mut state = callback_state.borrow_mut();
+                state.fired = true;
+                state.waker.take()
+            };
+            if let Some(waker) = waker {
+                waker.wake();
+            }
+        }) as Box<dyn FnMut()>);
+        let handle = set_timeout(callback.as_ref().unchecked_ref(), duration.as_millis() as u32);
+        Self {
+            handle,
+            _callback: callback,
+            state,
+        }
     }
 }
 
-unsafe impl Send for JsFutureTimeoutWrapper {}
+impl Drop for JsSleep {
+    fn drop(&mut self) {
+        clear_timeout(&self.handle);
+        self.state.borrow_mut().waker.take();
+    }
+}
+
+// Like the previous JsFuture wrapper, this future stays on its Wasm instance's
+// JavaScript thread; it is not transferred between workers.
+unsafe impl Send for JsSleep {}
 
 pub async fn sleep(duration: Duration) {
-    let js_future = JsFuture::from(Promise::new(&mut |resolve, _reject| {
-        set_timeout(&resolve, duration.as_millis() as u32);
-    }));
-    let _ = JsFutureTimeoutWrapper::new(js_future).await;
+    JsSleep::new(duration).await;
 }
 
 pub async fn timeout<F>(duration: Duration, future: F) -> Result<F::Output, TimeoutError>

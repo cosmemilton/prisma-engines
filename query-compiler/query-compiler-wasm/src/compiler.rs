@@ -1,3 +1,4 @@
+// Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 use psl::{ConnectorRegistry, parser_database::NoExtensionTypes};
 use quaint::connector::ConnectionInfo;
 use query_compiler::{CompileError, Expression, TranslateError};
@@ -25,6 +26,8 @@ const CONNECTOR_REGISTRY: ConnectorRegistry<'_> = &[
     psl::builtin_connectors::MSSQL,
     #[cfg(feature = "cockroachdb")]
     psl::builtin_connectors::COCKROACH,
+    #[cfg(feature = "firebird")]
+    psl::builtin_connectors::FIREBIRD,
 ];
 
 #[wasm_bindgen]

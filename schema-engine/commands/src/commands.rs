@@ -1,3 +1,4 @@
+// Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 //! The commands exposed by the schema engine core are defined in this module.
 
 mod apply_migrations;
@@ -19,7 +20,7 @@ pub use apply_migrations::apply_migrations;
 pub use create_migration::create_migration;
 pub use dev_diagnostic::dev_diagnostic;
 pub use diagnose_migration_history::diagnose_migration_history;
-pub use diff::diff;
+pub use diff::{diff, diff_datamodels};
 pub use evaluate_data_loss::evaluate_data_loss;
 pub use introspect_sql::introspect_sql;
 pub use mark_migration_applied::mark_migration_applied;

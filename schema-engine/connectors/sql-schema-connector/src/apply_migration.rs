@@ -1,3 +1,4 @@
+// Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 use crate::{
     SqlConnector, SqlSchemaConnector,
     migration_pair::MigrationPair,
@@ -17,6 +18,7 @@ pub(crate) async fn apply_migration(
     tracing::debug!("{} steps to execute", migration.steps.len());
 
     let renderer = connector.dialect().renderer();
+    renderer.validate_migration(migration)?;
 
     for step in &migration.steps {
         for sql_string in render_raw_sql(
@@ -40,6 +42,7 @@ pub(crate) fn render_script(
     renderer: &dyn SqlRenderer,
 ) -> ConnectorResult<String> {
     let migration: &SqlMigration = migration.downcast_ref();
+    renderer.validate_migration(migration)?;
     if migration.steps.is_empty() {
         return Ok("-- This is an empty migration.".to_owned());
     }

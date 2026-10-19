@@ -1,9 +1,11 @@
+# Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 [package]
 edition.workspace = true
 name = "sql-schema-connector"
 version = "0.1.0"
 
 [features]
+firebird = ["psl/firebird", "quaint/firebird", "schema-connector/firebird", "sql-schema-describer/firebird"]
 vendored-openssl = ["quaint/vendored-openssl"]
 postgresql = ["psl/postgresql", "quaint/postgresql", "schema-connector/postgresql", "sql-schema-describer/postgresql"]
 postgresql-native = ["postgresql", "quaint/postgresql-native", "quaint/pooled"]
@@ -62,4 +64,5 @@ sqlx-sqlite = { workspace = true, optional = true }
 sqlx-core = { workspace = true, optional = true }
 
 [dev-dependencies]
+async-trait.workspace = true
 expect-test.workspace = true

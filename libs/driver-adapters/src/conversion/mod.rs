@@ -1,6 +1,10 @@
+// Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 pub(crate) mod js_arg;
 pub(crate) mod js_arg_type;
 pub(crate) mod js_to_quaint;
+
+#[cfg(feature = "firebird")]
+pub(crate) mod firebird;
 
 #[cfg(feature = "mssql")]
 pub(crate) mod mssql;

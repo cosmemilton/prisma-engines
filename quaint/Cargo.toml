@@ -1,3 +1,4 @@
+# Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 [package]
 authors = [
   "Julius de Bruijn <bruijn@prisma.io>",
@@ -64,6 +65,7 @@ mysql = ["chrono/std"]
 pooled = ["dep:mobc"]
 sqlite-native = ["sqlite", "rusqlite/bundled", "tokio/sync"]
 sqlite = []
+firebird = []
 
 fmt-sql = ["dep:sqlformat"]
 

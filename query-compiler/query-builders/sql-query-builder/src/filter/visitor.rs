@@ -1,3 +1,4 @@
+// Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 use super::alias::*;
 use crate::join_utils::{AliasedJoin, compute_one2m_join};
 use crate::value::Placeholder;
@@ -867,6 +868,9 @@ pub(crate) fn default_scalar_filter(
                 ]))
             }
         },
+        ScalarCondition::StartsWith(value) if ctx.sql_family().is_firebird() => {
+            firebird_literal_starts_with(comparable, value, false, alias, ctx)
+        }
         ScalarCondition::StartsWith(value) => match value {
             ConditionValue::Value(value) => comparable.like(like_starts_with_pattern(value)),
             ConditionValue::FieldRef(field_ref) => comparable.like(quaint::ast::concat::<'_, Expression<'_>>(vec![
@@ -874,6 +878,9 @@ pub(crate) fn default_scalar_filter(
                 Value::text("%").raw().into(),
             ])),
         },
+        ScalarCondition::NotStartsWith(value) if ctx.sql_family().is_firebird() => {
+            firebird_literal_starts_with(comparable, value, true, alias, ctx)
+        }
         ScalarCondition::NotStartsWith(value) => match value {
             ConditionValue::Value(value) => comparable.not_like(like_starts_with_pattern(value)),
             ConditionValue::FieldRef(field_ref) => {
@@ -966,6 +973,24 @@ pub(crate) fn default_scalar_filter(
     };
 
     ConditionTree::single(condition)
+}
+
+fn firebird_literal_starts_with(
+    comparable: Expression<'static>,
+    value: ConditionValue,
+    not: bool,
+    alias: Option<Alias>,
+    ctx: &Context<'_>,
+) -> Compare<'static> {
+    let prefix = match value {
+        ConditionValue::Value(value) => prisma_value_to_like_expression(value),
+        ConditionValue::FieldRef(field) => field.aliased_col(alias, ctx).into(),
+    };
+    Compare::LiteralStartsWith {
+        left: Box::new(comparable),
+        right: Box::new(prefix),
+        not,
+    }
 }
 
 fn prisma_value_to_search_expression(pv: PrismaValue) -> Expression<'static> {

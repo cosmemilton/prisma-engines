@@ -1,3 +1,4 @@
+// Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 use super::{ColumnTypeChange, differ_database::DifferDatabase};
 use crate::{migration_pair::MigrationPair, sql_migration::SqlMigrationStep, sql_schema_differ};
 use sql_schema_describer::{
@@ -7,6 +8,11 @@ use sql_schema_describer::{
 
 /// Trait to specialize SQL schema diffing (resulting in migration steps) by SQL backend.
 pub(crate) trait SqlSchemaDifferFlavour {
+    /// Override default equivalence when the backend has a canonical literal representation.
+    fn column_defaults_match(&self, _columns: MigrationPair<TableColumnWalker<'_>>) -> Option<bool> {
+        None
+    }
+
     fn can_alter_primary_keys(&self) -> bool {
         false
     }

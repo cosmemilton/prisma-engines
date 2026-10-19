@@ -1,3 +1,4 @@
+// Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 use super::{ExpressionKind, SelectQuery};
 use crate::ast::{Column, ConditionTree, Expression};
 use std::borrow::Cow;
@@ -25,6 +26,12 @@ pub enum Compare<'a> {
     Like(Box<Expression<'a>>, Box<Expression<'a>>),
     /// `left NOT LIKE %..%`
     NotLike(Box<Expression<'a>>, Box<Expression<'a>>),
+    /// A literal prefix comparison, without LIKE wildcard interpretation.
+    LiteralStartsWith {
+        left: Box<Expression<'a>>,
+        right: Box<Expression<'a>>,
+        not: bool,
+    },
     /// `value IS NULL`
     Null(Box<Expression<'a>>),
     /// `value IS NOT NULL`

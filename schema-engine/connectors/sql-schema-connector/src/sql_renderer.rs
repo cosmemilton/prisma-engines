@@ -1,3 +1,4 @@
+// Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 //! Render SQL DDL statements.
 //!
 //! Conventions:
@@ -24,6 +25,11 @@ use sql_schema_describer::{
 };
 
 pub(crate) trait SqlRenderer: Send + Sync {
+    /// Reject unsupported migration steps before rendering or executing any statement.
+    fn validate_migration(&self, _migration: &crate::sql_migration::SqlMigration) -> schema_connector::ConnectorResult<()> {
+        Ok(())
+    }
+
     fn quote<'a>(&self, name: &'a str) -> Quoted<&'a str>;
 
     fn render_add_foreign_key(&self, foreign_key: ForeignKeyWalker<'_>) -> String;

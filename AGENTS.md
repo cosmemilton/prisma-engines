@@ -174,5 +174,19 @@ Prefer using Makefile targets that take care of setting up the environment corre
 
 ---
 
-**When modifying anything involving diagnostics or fixtures:** run relevant tests, refresh expectations, and ensure Git diffs are readable (no accidental CRLF/encoding swaps). Keep this file updated whenever we discover new traps.***
-s, and ensure Git diffs are readable (no accidental CRLF/encoding swaps). Keep this file updated whenever we discover new traps.***
+**When modifying anything involving diagnostics or fixtures:** run relevant tests, refresh expectations, and ensure Git diffs are readable (no accidental CRLF/encoding swaps). Keep this file updated whenever we discover new traps.
+
+## Experimental Firebird development
+
+See [the Firebird guide](docs/firebird.md) for the paired repository/build requirements,
+provider contracts, focused tests and current limitations. Firebird uses the
+JavaScript adapter and modified Wasm modules; a native Firebird engine is not
+provided. Preserve LICENSE, modification notices and copied-code attributions.
+Use explicitly owned disposable databases and synthetic data for integration
+tests. Keep database files, credentials, packages, generated build outputs and
+historical acceptance reports outside Git. Preserve immutable evidence locally
+before consolidating documentation; do not rewrite old receipts.
+
+On constrained Windows hosts, use native tooling, bound Cargo jobs and test
+workers, and coordinate builds with the user. Run checks proportional to the
+change; a documentation edit does not require a full Rust/Wasm rebuild.

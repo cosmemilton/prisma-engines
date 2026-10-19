@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 # Call this script as `./build.sh <npm_version>`
 #
 # Note: this script started as a copy of the `query-engine-wasm`'s `build.sh` script, but will likely diverge over time.
@@ -139,6 +140,7 @@ build "sqlite"
 build "mysql"
 build "sqlserver" "mssql"
 build "cockroachdb"
+build "firebird"
 
 jq '.version=$version' --arg version "$OUT_VERSION" package.json > "$OUT_JSON"
 
@@ -147,3 +149,4 @@ report_size "sqlite"
 report_size "mysql"
 report_size "sqlserver"
 report_size "cockroachdb"
+report_size "firebird"

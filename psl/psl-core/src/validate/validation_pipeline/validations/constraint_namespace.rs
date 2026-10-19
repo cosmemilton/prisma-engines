@@ -1,3 +1,4 @@
+// Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 use crate::datamodel_connector::{ConstraintScope, walker_ext_traits::*};
 use std::{borrow::Cow, collections::HashMap, ops::Deref};
 
@@ -199,12 +200,14 @@ impl<'db> ConstraintName<'db> {
             ConstraintName::Index(_) => [
                 GlobalKeyIndex,
                 GlobalPrimaryKeyKeyIndex,
+                GlobalPrimaryKeyKeyIndexForeignKey,
                 ModelKeyIndex,
                 ModelPrimaryKeyKeyIndex,
             ]
             .iter(),
             ConstraintName::Relation(_) => [
                 GlobalForeignKey,
+                GlobalPrimaryKeyKeyIndexForeignKey,
                 GlobalPrimaryKeyForeignKeyDefault,
                 ModelPrimaryKeyKeyIndexForeignKey,
             ]
@@ -213,6 +216,7 @@ impl<'db> ConstraintName<'db> {
             ConstraintName::PrimaryKey(_) => [
                 GlobalPrimaryKeyForeignKeyDefault,
                 GlobalPrimaryKeyKeyIndex,
+                GlobalPrimaryKeyKeyIndexForeignKey,
                 ModelPrimaryKeyKeyIndex,
                 ModelPrimaryKeyKeyIndexForeignKey,
             ]

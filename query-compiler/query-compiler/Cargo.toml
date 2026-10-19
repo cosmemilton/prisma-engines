@@ -1,3 +1,4 @@
+# Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 [package]
 edition = "2024"
 name = "query-compiler"
@@ -25,8 +26,8 @@ insta = { workspace = true, features = ["glob"] }
 request-handlers = { workspace = true, features = ["all"] }
 schema.workspace = true
 # pull all connectors for testing
-psl = { workspace = true, features = ["sqlite", "mysql", "postgresql", "mssql", "cockroachdb"] }
-quaint = { workspace = true, features = ["sqlite", "mysql", "postgresql", "mssql"] }
+psl = { workspace = true, features = ["sqlite", "mysql", "postgresql", "mssql", "cockroachdb", "firebird"] }
+quaint = { workspace = true, features = ["sqlite", "mysql", "postgresql", "mssql", "firebird"] }
 sql-query-builder = { workspace = true, features = ["relation_joins"] }
 
 [[example]]
@@ -43,4 +44,5 @@ postgresql = ["quaint/postgresql"]
 mysql = ["quaint/mysql"]
 mssql = ["quaint/mssql"]
 cockroachdb = ["postgresql"]
-all = ["sqlite", "postgresql", "mysql", "mssql", "cockroachdb"]
+firebird = ["quaint/firebird", "psl/firebird"]
+all = ["sqlite", "postgresql", "mysql", "mssql", "cockroachdb", "firebird"]

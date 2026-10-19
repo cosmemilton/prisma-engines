@@ -1,3 +1,4 @@
+// Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 use quaint::prelude::{ExternalConnectionInfo, SqlFamily};
 use serde::Deserialize;
 
@@ -19,11 +20,18 @@ impl JsConnectionInfo {
             SqlFamily::from(provider),
             self.schema_name(provider).map(ToOwned::to_owned),
             self.max_bind_values.map(|v| v as usize),
-            self.supports_relation_joins,
+            self.supports_relation_joins && provider.supports_relation_joins(),
         )
     }
 
     fn schema_name(&self, provider: AdapterProvider) -> Option<&str> {
+        // Firebird has no SQL schema namespace. Adapter metadata must never add
+        // PostgreSQL's `public` (or any other qualifier) to Firebird tables.
+        #[cfg(feature = "firebird")]
+        if provider == AdapterProvider::Firebird {
+            return None;
+        }
+
         self.schema_name
             .as_deref()
             .or_else(|| self.default_schema_name(provider))
@@ -39,6 +47,8 @@ impl JsConnectionInfo {
             AdapterProvider::Sqlite => Some(quaint::connector::DEFAULT_SQLITE_DATABASE),
             #[cfg(feature = "mssql")]
             AdapterProvider::SqlServer => Some(quaint::connector::DEFAULT_MSSQL_SCHEMA),
+            #[cfg(feature = "firebird")]
+            AdapterProvider::Firebird => None,
         }
     }
 }
@@ -55,6 +65,19 @@ pub enum AdapterProvider {
     #[cfg(feature = "mssql")]
     #[serde(rename = "sqlserver")]
     SqlServer,
+    #[cfg(feature = "firebird")]
+    Firebird,
+}
+
+impl AdapterProvider {
+    fn supports_relation_joins(self) -> bool {
+        // The JSON/lateral join strategy is not implemented for Firebird 3.
+        #[cfg(feature = "firebird")]
+        if self == Self::Firebird {
+            return false;
+        }
+        true
+    }
 }
 
 impl From<AdapterProvider> for SqlFamily {
@@ -68,6 +91,32 @@ impl From<AdapterProvider> for SqlFamily {
             AdapterProvider::Sqlite => SqlFamily::Sqlite,
             #[cfg(feature = "mssql")]
             AdapterProvider::SqlServer => SqlFamily::Mssql,
+            #[cfg(feature = "firebird")]
+            AdapterProvider::Firebird => SqlFamily::Firebird,
         }
+    }
+}
+
+#[cfg(all(test, feature = "firebird"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn firebird_provider_is_distinct_and_has_no_default_schema() {
+        let provider = serde_json::from_str::<AdapterProvider>("\"firebird\"").unwrap();
+        assert_eq!(provider, AdapterProvider::Firebird);
+        assert_eq!(SqlFamily::from(provider), SqlFamily::Firebird);
+        assert_eq!(JsConnectionInfo::default().schema_name(provider), None);
+    }
+
+    #[test]
+    fn firebird_ignores_schema_and_relation_join_metadata() {
+        let info = JsConnectionInfo {
+            schema_name: Some("public".into()),
+            max_bind_values: Some(32767),
+            supports_relation_joins: true,
+        };
+        assert_eq!(info.schema_name(AdapterProvider::Firebird), None);
+        assert!(!AdapterProvider::Firebird.supports_relation_joins());
     }
 }

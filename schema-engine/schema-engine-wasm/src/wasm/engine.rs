@@ -1,3 +1,4 @@
+// Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 use super::logger::init_logger;
 use commands::{
     MigrationSchemaCache, SchemaContainerExt,
@@ -49,6 +50,13 @@ pub fn version() -> String {
     env!("GIT_HASH").to_string()
 }
 
+/// Compare only empty schemas and Prisma datamodels, without creating an engine or connecting an adapter.
+#[wasm_bindgen(js_name = "diffDatamodels")]
+pub async fn diff_datamodels(params: DiffParams) -> Result<DiffResult, JsValue> {
+    register_panic_hook();
+    Ok(commands::diff_datamodels(params, &NoExtensionTypes)?)
+}
+
 /// Parameters defining the construction of an engine.
 #[derive(Debug, Deserialize, Tsify)]
 #[tsify(from_wasm_abi)]
@@ -79,6 +87,13 @@ pub struct SchemaEngine {
 
 #[wasm_bindgen]
 impl SchemaEngine {
+    /// Release held database locks and the adapter before freeing this engine.
+    #[wasm_bindgen]
+    pub async fn dispose(&mut self) -> Result<(), JsValue> {
+        self.connector.dispose().await?;
+        Ok(())
+    }
+
     // Note: we shouldn't mark this as a constructor, due to https://github.com/rustwasm/wasm-bindgen/issues/3976.
     #[wasm_bindgen]
     pub async fn new(
@@ -98,8 +113,15 @@ impl SchemaEngine {
             } = options;
 
             let adapter_factory = Arc::new(adapter_factory_from_js(adapter));
-            let adapter = Arc::new(adapter_factory.connect().await?);
-            let connector = SqlSchemaConnector::new_from_external(adapter).await?;
+            let adapter = ExternalConnectorFactory::connect(adapter_factory.as_ref()).await?;
+            #[cfg(feature = "firebird")]
+            let firebird_adapter = matches!(adapter.provider(), quaint::connector::AdapterProvider::Firebird);
+            #[allow(unused_mut)]
+            let mut connector = SqlSchemaConnector::new_from_external(adapter).await?;
+            #[cfg(feature = "firebird")]
+            if firebird_adapter {
+                connector.set_external_shadow_database_factory(adapter_factory.clone());
+            }
 
             let initial_datamodels: Option<Vec<_>> = initial_datamodels.map(|schemas| {
                 schemas

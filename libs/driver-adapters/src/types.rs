@@ -1,3 +1,4 @@
+// Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 // `clippy::empty_docs` is required because of the `tsify` crate.
 #![allow(unused_imports, clippy::empty_docs)]
 
@@ -17,16 +18,21 @@ pub(crate) struct JsConnectionInfo {
     pub schema_name: Option<String>,
     pub max_bind_values: Option<u32>,
     pub supports_relation_joins: bool,
+    pub max_concurrent_connections: Option<u32>,
+    pub supports_bounded_transaction_wait: Option<bool>,
 }
 
 impl JsConnectionInfo {
     pub fn into_external_connection_info(self, provider: &AdapterProvider) -> ExternalConnectionInfo {
-        ExternalConnectionInfo::new(
+        let mut info = ExternalConnectionInfo::new(
             SqlFamily::from(provider),
             self.schema_name(provider).map(ToOwned::to_owned),
             self.max_bind_values.map(|v| v as usize),
             self.supports_relation_joins,
-        )
+        );
+        info.max_concurrent_connections = self.max_concurrent_connections.map(|value| value as usize);
+        info.supports_bounded_transaction_wait = self.supports_bounded_transaction_wait;
+        info
     }
 
     fn schema_name(&self, provider: &AdapterProvider) -> Option<&str> {
@@ -45,6 +51,8 @@ impl JsConnectionInfo {
             AdapterProvider::Sqlite => Some(quaint::connector::DEFAULT_SQLITE_DATABASE),
             #[cfg(feature = "mssql")]
             AdapterProvider::SqlServer => Some(quaint::connector::DEFAULT_MSSQL_SCHEMA),
+            #[cfg(feature = "firebird")]
+            AdapterProvider::Firebird => None,
         }
     }
 }
@@ -247,4 +255,25 @@ pub struct TransactionOptions {
     /// Whether or not to run a phantom query (i.e., a query that only influences Prisma event logs, but not the database itself)
     /// before opening a transaction, committing, or rollbacking.
     pub use_phantom_query: bool,
+}
+
+#[cfg(all(test, feature = "firebird"))]
+mod firebird_connection_info_tests {
+    use super::*;
+
+    #[test]
+    fn optional_pool_and_wait_metadata_survive_the_javascript_bridge() {
+        let info: JsConnectionInfo = serde_json::from_str(
+            r#"{"supportsRelationJoins":false,"maxConcurrentConnections":2,"supportsBoundedTransactionWait":true}"#,
+        )
+        .unwrap();
+        let info = info.into_external_connection_info(&AdapterProvider::Firebird);
+        assert_eq!(info.max_concurrent_connections, Some(2));
+        assert_eq!(info.supports_bounded_transaction_wait, Some(true));
+
+        let info: JsConnectionInfo = serde_json::from_str(r#"{"supportsRelationJoins":false}"#).unwrap();
+        let info = info.into_external_connection_info(&AdapterProvider::Firebird);
+        assert_eq!(info.max_concurrent_connections, None);
+        assert_eq!(info.supports_bounded_transaction_wait, None);
+    }
 }

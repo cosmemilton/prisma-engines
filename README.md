@@ -40,6 +40,8 @@ You'll also find:
 - an `.envrc` file to make it easier to set everything up, including the `nix
 shell`
 
+Experimental Firebird 3 integration: see the [Firebird guide](./docs/firebird.md).
+
 ## Documentation
 
 The [API docs (cargo doc)](https://prisma.github.io/prisma-engines/) are

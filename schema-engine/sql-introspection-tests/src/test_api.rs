@@ -1,3 +1,4 @@
+// Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 pub use super::TestResult;
 pub use expect_test::expect;
 pub use indoc::{formatdoc, indoc};
@@ -346,6 +347,9 @@ impl TestApi {
                 SqlFamily::Postgres => barrel::SqlVariant::Pg,
                 SqlFamily::Sqlite => barrel::SqlVariant::Sqlite,
                 SqlFamily::Mssql => barrel::SqlVariant::Mssql,
+                // Firebird can be enabled through dependency feature unification in this native-only helper.
+                #[allow(unreachable_patterns)]
+                _ => unimplemented!("Firebird introspection has no Barrel SQL backend"),
             },
             tags: self.tags(),
         }

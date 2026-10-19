@@ -1,5 +1,8 @@
+// Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 #![cfg_attr(target_arch = "wasm32", allow(unused_imports))]
 
+#[cfg(feature = "firebird")]
+mod firebird;
 mod mysql;
 mod postgresql;
 mod sqlite;
@@ -8,6 +11,8 @@ mod sqlserver;
 use sql::{ForeignKeyWalker, IndexColumnWalker, IndexWalker, TableWalker};
 use sql_schema_describer as sql;
 
+#[cfg(feature = "firebird")]
+pub(super) use firebird::FirebirdIntrospectionFlavour;
 pub(super) use mysql::MysqlIntrospectionFlavour;
 pub(super) use postgresql::PostgresIntrospectionFlavour;
 pub(super) use sqlite::SqliteIntrospectionFlavour;

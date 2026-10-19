@@ -1,3 +1,4 @@
+// Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 use crate::migration_pair::MigrationPair;
 use enumflags2::BitFlags;
 
@@ -35,6 +36,9 @@ pub(crate) fn all_changes(
 ///
 /// - We bail on a number of cases that are too complex to deal with right now or underspecified.
 fn defaults_match(cols: MigrationPair<TableColumnWalker<'_>>, flavour: &dyn SqlSchemaDifferFlavour) -> bool {
+    if let Some(matches) = flavour.column_defaults_match(cols) {
+        return matches;
+    }
     // JSON defaults on MySQL should be ignored.
     if flavour.should_ignore_json_defaults()
         && (cols.previous.column_type_family().is_json() || cols.next.column_type_family().is_json())

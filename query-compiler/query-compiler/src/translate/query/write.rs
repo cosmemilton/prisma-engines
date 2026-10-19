@@ -1,4 +1,6 @@
+// Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 use itertools::{Either, Itertools};
+use psl::datamodel_connector::Flavour;
 use query_builder::{CreateRecord, CreateRecordDefaultsQuery, QueryBuilder};
 use query_core::{
     ConnectRecords, DeleteManyRecords, DeleteRecord, DisconnectRecords, RawQuery, UpdateManyRecords, UpdateRecord,
@@ -212,6 +214,16 @@ pub(crate) fn translate_write_query(query: WriteQuery, builder: &dyn QueryBuilde
                 .iter()
                 .map(|(field, val)| (field.db_name().into(), FieldInitializer::Value(val.clone())))
                 .collect();
+
+            if model.dm.schema.connector.flavour() == Flavour::Firebird && !args.is_empty() {
+                // The graph retains its existing-identifier read, transaction and result read.
+                // Read the effective key from Firebird: numeric operations and BEFORE triggers
+                // can change it in ways that JavaScript number-based mapping cannot reproduce.
+                let query = builder
+                    .build_update(&model, record_filter, args, Some(&id_fields))
+                    .map_err(TranslateError::QueryBuildFailure)?;
+                return Ok(Expression::Unique(Box::new(Expression::Query(query))));
+            }
 
             // Keep track of the operations that are applied to the primary identifier or shard key fields.
             // They need to be applied in-memory to the record we intend to return.

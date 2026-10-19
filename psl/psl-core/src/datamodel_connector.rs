@@ -1,3 +1,4 @@
+// Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 //! The interface implemented by connectors for Prisma schema validation and interpretation.
 
 /// Connector capabilities
@@ -323,6 +324,7 @@ pub enum Flavour {
     Mysql,
     Postgres,
     Sqlite,
+    Firebird,
 }
 
 impl Flavour {
@@ -352,6 +354,8 @@ pub enum ConstraintScope {
     GlobalForeignKey,
     /// Globally primary keys, indices and unique constraints
     GlobalPrimaryKeyKeyIndex,
+    /// Globally primary keys, foreign keys, indices and unique constraints
+    GlobalPrimaryKeyKeyIndexForeignKey,
     /// Globally primary keys, foreign keys and default constraints
     GlobalPrimaryKeyForeignKeyDefault,
     /// Per model indices and unique constraints
@@ -370,6 +374,9 @@ impl ConstraintScope {
             ConstraintScope::GlobalForeignKey => Cow::from("global for foreign keys"),
             ConstraintScope::GlobalPrimaryKeyKeyIndex => {
                 Cow::from("global for primary key, indexes and unique constraints")
+            }
+            ConstraintScope::GlobalPrimaryKeyKeyIndexForeignKey => {
+                Cow::from("global for primary key, foreign keys, indexes and unique constraints")
             }
             ConstraintScope::GlobalPrimaryKeyForeignKeyDefault => {
                 Cow::from("global for primary keys, foreign keys and default constraints")

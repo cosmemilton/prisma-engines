@@ -1,3 +1,4 @@
+// Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 //! Query Engine Driver Adapters
 //! This crate is responsible for defining a `quaint::Connector` implementation that uses functions
 //! exposed by client `wasm_bindgen` / `js_sys`.
@@ -92,6 +93,13 @@ impl From<DriverAdapterError> for QuaintError {
             MappedDriverAdapterError::ValueOutOfRange { cause } => {
                 QuaintError::builder(ErrorKind::ValueOutOfRange { message: cause })
             }
+            MappedDriverAdapterError::InvalidInputValue { message } => {
+                QuaintError::builder(ErrorKind::QueryInvalidInput(message))
+            }
+            MappedDriverAdapterError::SocketTimeout => QuaintError::builder(ErrorKind::SocketTimeout),
+            MappedDriverAdapterError::InconsistentColumnData { cause } => {
+                QuaintError::builder(ErrorKind::ConversionError(cause.into()))
+            }
             MappedDriverAdapterError::MissingFullTextSearchIndex => {
                 QuaintError::builder(ErrorKind::MissingFullTextSearchIndex)
             }
@@ -107,7 +115,17 @@ impl From<DriverAdapterError> for QuaintError {
             MappedDriverAdapterError::Sqlite(e) => return e.into(),
             #[cfg(feature = "mssql")]
             MappedDriverAdapterError::Mssql(e) => return e.into(),
-            // in future, more error types would be added and we'll need to convert them to proper QuaintErrors here
+            #[cfg(feature = "firebird")]
+            MappedDriverAdapterError::Firebird { code, message } => {
+                let mut builder = QuaintError::builder(ErrorKind::RawConnectorError {
+                    status: code.to_string(),
+                    reason: message.clone(),
+                });
+                // Preserve actual ISC/GDS diagnostics when outer wrapper fields are absent.
+                builder.set_original_code(code.to_string());
+                builder.set_original_message(message);
+                builder
+            } // in future, more error types would be added and we'll need to convert them to proper QuaintErrors here
         };
         if let Some(original_code) = original_code {
             builder.set_original_code(original_code);

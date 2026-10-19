@@ -1,8 +1,9 @@
+// Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 use std::{str::FromStr, sync::Arc};
 
 use async_trait::async_trait;
 
-use super::{SqlFamily, TransactionCapable};
+use super::{IsolationLevel, SqlFamily, Transaction, TransactionCapable};
 
 #[cfg_attr(target_arch = "wasm32", derive(serde::Deserialize))]
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
@@ -51,6 +52,8 @@ impl FromStr for AdapterName {
 #[cfg_attr(target_arch = "wasm32", derive(serde::Deserialize))]
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub enum AdapterProvider {
+    #[cfg(feature = "firebird")]
+    Firebird,
     #[cfg(feature = "mysql")]
     Mysql,
     #[cfg(feature = "postgresql")]
@@ -65,6 +68,8 @@ pub enum AdapterProvider {
 impl AdapterProvider {
     pub fn db_system_name(&self) -> &'static str {
         match self {
+            #[cfg(feature = "firebird")]
+            Self::Firebird => "firebird",
             #[cfg(feature = "mysql")]
             Self::Mysql => "mysql",
             #[cfg(feature = "postgresql")]
@@ -82,6 +87,8 @@ impl FromStr for AdapterProvider {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
+            #[cfg(feature = "firebird")]
+            "firebird" => Ok(Self::Firebird),
             #[cfg(feature = "postgresql")]
             "postgres" => Ok(Self::Postgres),
             #[cfg(feature = "mysql")]
@@ -98,6 +105,8 @@ impl FromStr for AdapterProvider {
 impl From<&AdapterProvider> for SqlFamily {
     fn from(value: &AdapterProvider) -> Self {
         match value {
+            #[cfg(feature = "firebird")]
+            AdapterProvider::Firebird => SqlFamily::Firebird,
             #[cfg(feature = "mysql")]
             AdapterProvider::Mysql => SqlFamily::Mysql,
             #[cfg(feature = "postgresql")]
@@ -117,6 +126,10 @@ pub struct ExternalConnectionInfo {
     pub schema_name: Option<String>,
     pub max_bind_values: Option<usize>,
     pub supports_relation_joins: bool,
+    /// Maximum simultaneous connections available to this adapter, when known.
+    pub max_concurrent_connections: Option<usize>,
+    /// Whether transaction lock waits are bounded, including NOWAIT.
+    pub supports_bounded_transaction_wait: Option<bool>,
 }
 
 impl ExternalConnectionInfo {
@@ -131,6 +144,8 @@ impl ExternalConnectionInfo {
             schema_name,
             max_bind_values,
             supports_relation_joins,
+            max_concurrent_connections: None,
+            supports_bounded_transaction_wait: None,
         }
     }
 }
@@ -142,6 +157,16 @@ pub trait ExternalConnector: TransactionCapable {
     async fn get_connection_info(&self) -> crate::Result<ExternalConnectionInfo>;
     async fn execute_script(&self, script: &str) -> crate::Result<()>;
     async fn dispose(&self) -> crate::Result<()>;
+
+    /// Start a transaction which owns its connection and can outlive this borrow.
+    /// Schema engines use this to retain a database lock across pooled queries.
+    /// Adapters without an owned transaction implementation explicitly return `None`.
+    async fn start_owned_transaction(
+        &self,
+        _isolation: Option<IsolationLevel>,
+    ) -> Option<crate::Result<Box<dyn Transaction + 'static>>> {
+        None
+    }
 
     /// Returns a reference to self as an ExternalConnector.
     fn as_external_connector(&self) -> Option<&dyn ExternalConnector>

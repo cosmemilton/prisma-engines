@@ -1,3 +1,4 @@
+// Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 pub use expect_test::expect;
 pub use indoc::{formatdoc, indoc};
 pub use quaint::{prelude::Queryable, single::Quaint};
@@ -123,6 +124,9 @@ impl TestApi {
                     .describe(schemas)
                     .await
             }
+            // Firebird can be enabled through dependency feature unification in this native-only helper.
+            #[allow(unreachable_patterns)]
+            _ => unimplemented!("Firebird SQL schema introspection is not implemented"),
         }
     }
 

@@ -1,4 +1,5 @@
 #![deny(rust_2018_idioms, unsafe_code, missing_docs)]
+// Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 #![allow(clippy::needless_collect)] // the implementation of that rule is way too eager, it rejects necessary collects
 #![allow(clippy::derive_partial_eq_without_eq)]
 
@@ -85,9 +86,16 @@ fn connector_for_connection_string(
             let connector = MongoDbSchemaConnector::new(params);
             Ok(Box::new(connector))
         }
+        Some("firebird") => Err(firebird_schema_operation_error()),
         Some(_) => Err(CoreError::url_parse_error("The scheme is not recognized")),
         None => Err(CoreError::url_parse_error("Missing URL scheme")),
     }
+}
+
+fn firebird_schema_operation_error() -> CoreError {
+    CoreError::from_msg(
+        "Firebird schema operations require the schema-engine Wasm and a Firebird JavaScript driver adapter; the native schema engine cannot connect to Firebird.".into(),
+    )
 }
 
 /// Same as schema_to_connector, but it will only read the provider, not the connector params.
@@ -169,11 +177,55 @@ fn connector_for_provider(
             Flavour::Mysql => Ok(Box::new(SqlSchemaConnector::new_mysql(params)?)),
             Flavour::Postgres => Ok(Box::new(SqlSchemaConnector::new_postgres(params)?)),
             Flavour::Sqlite => Ok(Box::new(SqlSchemaConnector::new_sqlite(params)?)),
+            Flavour::Firebird => Err(firebird_schema_operation_error()),
         }
     } else {
         Err(CoreError::from_msg(format!(
             "`{provider}` is not a supported connector."
         )))
+    }
+}
+
+#[cfg(test)]
+mod firebird_schema_support_tests {
+    use super::*;
+
+    #[test]
+    fn schema_operations_reject_firebird_before_connecting() {
+        let params = ConnectorParams {
+            connection_string: "firebird://localhost/synthetic.fdb".to_owned(),
+            preview_features: BitFlags::empty(),
+            shadow_database_connection_string: None,
+        };
+
+        let error = match connector_for_provider("firebird", params) {
+            Ok(_) => panic!("Firebird schema operations must remain unavailable until implemented"),
+            Err(error) => error,
+        };
+
+        assert!(
+            error
+                .to_string()
+                .contains("the native schema engine cannot connect to Firebird")
+        );
+    }
+
+    #[test]
+    fn firebird_urls_reject_schema_operations_before_connecting() {
+        let error = match connector_for_connection_string(
+            "firebird://localhost/synthetic.fdb".to_owned(),
+            None,
+            BitFlags::empty(),
+        ) {
+            Ok(_) => panic!("Firebird schema operations must remain unavailable until implemented"),
+            Err(error) => error,
+        };
+
+        assert!(
+            error
+                .to_string()
+                .contains("the native schema engine cannot connect to Firebird")
+        );
     }
 }
 

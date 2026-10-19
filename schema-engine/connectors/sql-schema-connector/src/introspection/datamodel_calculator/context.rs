@@ -1,3 +1,4 @@
+// Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 mod flavour;
 
 use crate::introspection::{
@@ -43,6 +44,8 @@ impl<'a> DatamodelCalculatorContext<'a> {
         extension_types: &'a dyn ExtensionTypes,
     ) -> Self {
         let flavour: Box<dyn IntrospectionFlavour> = match ctx.sql_family() {
+            #[cfg(feature = "firebird")]
+            SqlFamily::Firebird => Box::new(flavour::FirebirdIntrospectionFlavour),
             #[cfg(any(feature = "postgresql", feature = "cockroachdb"))]
             SqlFamily::Postgres => Box::new(flavour::PostgresIntrospectionFlavour),
             #[cfg(feature = "mysql")]

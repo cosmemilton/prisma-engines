@@ -1,4 +1,5 @@
 #![deny(rust_2018_idioms, unsafe_code, missing_docs)]
+// Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 #![allow(clippy::needless_collect)] // the implementation of that rule is way too eager, it rejects necessary collects
 #![allow(clippy::derive_partial_eq_without_eq)]
 
@@ -41,6 +42,9 @@ pub fn dialect_for_provider(provider: &str) -> CoreResult<Box<dyn schema_connect
 
     if let Some(connector) = BUILTIN_CONNECTORS.iter().find(|c| c.is_provider(provider)) {
         match connector.flavour() {
+            #[cfg(feature = "firebird")]
+            Flavour::Firebird => Ok(Box::new(SqlSchemaDialect::firebird())),
+
             #[cfg(feature = "sqlite")]
             Flavour::Sqlite => Ok(Box::new(SqlSchemaDialect::sqlite())),
 

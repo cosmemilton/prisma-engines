@@ -1,8 +1,11 @@
+// Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 //! Database description. This crate is used heavily in the schema engine.
 
 #![deny(rust_2018_idioms, unsafe_code)]
 #![allow(clippy::derive_partial_eq_without_eq)]
 
+#[cfg(feature = "firebird")]
+pub mod firebird;
 pub mod mssql;
 pub mod mysql;
 pub mod postgres;

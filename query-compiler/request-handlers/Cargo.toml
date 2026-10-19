@@ -1,3 +1,4 @@
+# Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 [package]
 name = "request-handlers"
 version = "0.1.0"
@@ -26,6 +27,7 @@ mysql = ["psl/mysql"]
 sqlite = ["psl/sqlite"]
 cockroachdb = ["psl/cockroachdb"]
 mssql = ["psl/mssql"]
+firebird = ["psl/firebird"]
 all = [
     "mongodb",
     "mysql",
@@ -33,6 +35,7 @@ all = [
     "postgresql",
     "cockroachdb",
     "mssql",
+    "firebird",
     "graphql-protocol",
     "psl/all",
 ]

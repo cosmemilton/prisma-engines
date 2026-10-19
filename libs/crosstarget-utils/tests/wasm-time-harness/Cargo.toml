@@ -1,0 +1,17 @@
+# Added for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
+[package]
+name = "crosstarget-wasm-time-harness"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# A test-only isolated workspace; production manifests and exports are unchanged.
+[workspace]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+crosstarget-utils = { path = "../.." }
+wasm-bindgen = "=0.2.105"
+wasm-bindgen-futures = "=0.4.45"

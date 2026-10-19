@@ -1,3 +1,4 @@
+// Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 //! The SQL migration connector.
 
 #![deny(rust_2018_idioms, unsafe_code, missing_docs)]
@@ -44,6 +45,12 @@ pub struct SqlSchemaDialect {
 }
 
 impl SqlSchemaDialect {
+    /// Creates a Firebird 3.0 schema dialect for external driver adapters.
+    #[cfg(feature = "firebird")]
+    pub fn firebird() -> Self {
+        Self::new(Box::new(flavour::FirebirdDialect))
+    }
+
     /// Creates a CockroachDB schema dialect with the default settings.
     #[cfg(feature = "postgresql")]
     pub fn cockroach() -> Self {
@@ -241,19 +248,46 @@ fn apply_partial_index_feature_gating(
 pub struct SqlSchemaConnector {
     inner: Box<dyn SqlConnector + Send + Sync + 'static>,
     host: Arc<dyn ConnectorHost>,
+    external_shadow_factory: Option<Arc<dyn quaint::connector::ExternalConnectorFactory>>,
 }
 
 impl SqlSchemaConnector {
+    /// Configure the adapter factory used by migration commands which obtain their
+    /// shadow through the connector rather than an explicit command parameter.
+    pub fn set_external_shadow_database_factory(
+        &mut self,
+        factory: Arc<dyn quaint::connector::ExternalConnectorFactory>,
+    ) {
+        self.external_shadow_factory = Some(factory);
+    }
+
     /// Initialise an external migration connector.
     pub async fn new_from_external(adapter: Arc<dyn quaint::connector::ExternalConnector>) -> ConnectorResult<Self> {
         match adapter.provider() {
+            #[cfg(feature = "firebird")]
+            quaint::connector::AdapterProvider::Firebird => Self::new_firebird_external(adapter).await,
             #[cfg(all(feature = "postgresql", not(feature = "postgresql-native")))]
             quaint::connector::AdapterProvider::Postgres => Self::new_postgres_external(adapter).await,
             #[cfg(all(feature = "sqlite", not(feature = "sqlite-native")))]
             quaint::connector::AdapterProvider::Sqlite => Ok(Self::new_sqlite_external(adapter).await),
             #[allow(unreachable_patterns)]
-            _ => panic!("Unsupported adapter provider: {:?}", adapter.provider()),
+            _ => Err(ConnectorError::from_msg(format!(
+                "Unsupported schema-engine adapter provider: {:?}",
+                adapter.provider()
+            ))),
         }
+    }
+
+    /// Initialize a Firebird migration and introspection connector over a JavaScript adapter.
+    #[cfg(feature = "firebird")]
+    pub async fn new_firebird_external(
+        adapter: Arc<dyn quaint::connector::ExternalConnector>,
+    ) -> ConnectorResult<Self> {
+        Ok(Self {
+            inner: Box::new(flavour::FirebirdConnector::new_external(adapter).await?),
+            host: Arc::new(EmptyHost),
+            external_shadow_factory: None,
+        })
     }
 
     /// Initialize an external PostgreSQL migration connector.
@@ -264,6 +298,7 @@ impl SqlSchemaConnector {
         Ok(SqlSchemaConnector {
             inner: Box::new(flavour::PostgresConnector::new_external(adapter).await?),
             host: Arc::new(EmptyHost),
+            external_shadow_factory: None,
         })
     }
 
@@ -273,6 +308,7 @@ impl SqlSchemaConnector {
         SqlSchemaConnector {
             inner: Box::new(flavour::SqliteConnector::new_external(adapter)),
             host: Arc::new(EmptyHost),
+            external_shadow_factory: None,
         }
     }
 
@@ -282,6 +318,7 @@ impl SqlSchemaConnector {
         Ok(SqlSchemaConnector {
             inner: Box::new(flavour::PostgresConnector::new_postgres(params)?),
             host: Arc::new(EmptyHost),
+            external_shadow_factory: None,
         })
     }
 
@@ -291,6 +328,7 @@ impl SqlSchemaConnector {
         Ok(SqlSchemaConnector {
             inner: Box::new(flavour::PostgresConnector::new_cockroach(params)?),
             host: Arc::new(EmptyHost),
+            external_shadow_factory: None,
         })
     }
 
@@ -303,6 +341,7 @@ impl SqlSchemaConnector {
         Ok(SqlSchemaConnector {
             inner: Box::new(flavour::PostgresConnector::new_with_params(params)?),
             host: Arc::new(EmptyHost),
+            external_shadow_factory: None,
         })
     }
 
@@ -312,6 +351,7 @@ impl SqlSchemaConnector {
         Ok(SqlSchemaConnector {
             inner: Box::new(flavour::SqliteConnector::new_with_params(params)?),
             host: Arc::new(EmptyHost),
+            external_shadow_factory: None,
         })
     }
 
@@ -321,6 +361,7 @@ impl SqlSchemaConnector {
         Ok(SqlSchemaConnector {
             inner: Box::new(flavour::SqliteConnector::new_inmem(preview_features)?),
             host: Arc::new(EmptyHost),
+            external_shadow_factory: None,
         })
     }
 
@@ -330,6 +371,7 @@ impl SqlSchemaConnector {
         Ok(SqlSchemaConnector {
             inner: Box::new(flavour::MysqlConnector::new_with_params(params)?),
             host: Arc::new(EmptyHost),
+            external_shadow_factory: None,
         })
     }
 
@@ -339,6 +381,7 @@ impl SqlSchemaConnector {
         Ok(SqlSchemaConnector {
             inner: Box::new(flavour::MssqlConnector::new_with_params(params)?),
             host: Arc::new(EmptyHost),
+            external_shadow_factory: None,
         })
     }
 
@@ -489,12 +532,13 @@ impl SchemaConnector for SqlSchemaConnector {
         filter: &'a SchemaFilter,
     ) -> BoxFuture<'a, ConnectorResult<DatabaseSchema>> {
         Box::pin(async move {
-            let db_schema = match self.inner.shadow_db_url() {
-                Some(connection_string) => {
-                    let target = ExternalShadowDatabase::ConnectionString {
-                        connection_string: connection_string.to_owned(),
-                        preview_features: self.inner.preview_features(),
-                    };
+            let target = configured_shadow_database_target(
+                self.external_shadow_factory.as_ref(),
+                self.inner.shadow_db_url(),
+                self.inner.preview_features(),
+            );
+            let db_schema = match target {
+                Some(target) => {
                     self.schema_dialect()
                         .schema_from_migrations_with_target(migrations, namespaces, filter, target)
                         .await?
@@ -639,6 +683,123 @@ impl SchemaConnector for SqlSchemaConnector {
     }
 }
 
+fn configured_shadow_database_target(
+    factory: Option<&Arc<dyn quaint::connector::ExternalConnectorFactory>>,
+    connection_string: Option<&str>,
+    preview_features: psl::PreviewFeatures,
+) -> Option<ExternalShadowDatabase> {
+    if let Some(factory) = factory {
+        return Some(ExternalShadowDatabase::DriverAdapter {
+            factory: Arc::clone(factory),
+            preview_features,
+        });
+    }
+    connection_string.map(|connection_string| ExternalShadowDatabase::ConnectionString {
+        connection_string: connection_string.to_owned(),
+        preview_features,
+    })
+}
+
+#[cfg(all(test, feature = "firebird"))]
+mod firebird_shadow_factory_tests {
+    use super::*;
+    use quaint::connector::{AdapterName, AdapterProvider, ExternalConnector, ExternalConnectorFactory};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[derive(Default)]
+    struct ShadowFactory {
+        main_connections: AtomicUsize,
+        shadow_connections: AtomicUsize,
+    }
+
+    #[async_trait::async_trait]
+    impl ExternalConnectorFactory for ShadowFactory {
+        fn adapter_name(&self) -> AdapterName {
+            AdapterName::Unknown
+        }
+        fn provider(&self) -> AdapterProvider {
+            AdapterProvider::Firebird
+        }
+        async fn connect(&self) -> quaint::Result<Arc<dyn ExternalConnector>> {
+            self.main_connections.fetch_add(1, Ordering::Relaxed);
+            Err(
+                quaint::error::Error::builder(quaint::error::ErrorKind::QueryInvalidInput(
+                    "main connection must not be used for shadow history".into(),
+                ))
+                .build(),
+            )
+        }
+        async fn connect_to_shadow_db(&self) -> Option<quaint::Result<Arc<dyn ExternalConnector>>> {
+            self.shadow_connections.fetch_add(1, Ordering::Relaxed);
+            Some(Err(quaint::error::Error::builder(
+                quaint::error::ErrorKind::QueryInvalidInput("configured shadow factory reached".into()),
+            )
+            .build()))
+        }
+    }
+
+    #[test]
+    #[cfg(not(any(
+        feature = "mssql-native",
+        feature = "mysql-native",
+        feature = "postgresql-native",
+        feature = "sqlite-native"
+    )))]
+    fn firebird_configured_shadow_factory_reaches_the_explicit_shadow_route() {
+        let calls = Arc::new(ShadowFactory::default());
+        let factory: Arc<dyn ExternalConnectorFactory> = calls.clone();
+        let features = psl::PreviewFeatures::from(psl::PreviewFeature::PartialIndexes);
+        let target = configured_shadow_database_target(Some(&factory), None, features).unwrap();
+        match &target {
+            ExternalShadowDatabase::DriverAdapter {
+                factory: selected,
+                preview_features,
+            } => {
+                assert!(Arc::ptr_eq(selected, &factory));
+                assert_eq!(*preview_features, features);
+            }
+            ExternalShadowDatabase::ConnectionString { .. } => panic!("configured adapter factory was lost"),
+        }
+        let dialect = SqlSchemaDialect::firebird();
+        let migrations = Migrations {
+            migration_directories: vec![],
+            shadow_db_init_script: String::new(),
+        };
+        let filter = SchemaFilter::default();
+        let future = dialect.schema_from_migrations_with_target(&migrations, None, &filter, target);
+        let mut future = std::pin::pin!(future);
+        let mut context = std::task::Context::from_waker(std::task::Waker::noop());
+        let result = match std::future::Future::poll(future.as_mut(), &mut context) {
+            std::task::Poll::Ready(result) => result,
+            std::task::Poll::Pending => panic!("sentinel factory should fail without I/O"),
+        };
+        let error = match result {
+            Err(error) => error,
+            Ok(_) => panic!("expected sentinel shadow error"),
+        };
+        assert!(error.to_string().contains("configured shadow factory reached"));
+        assert_eq!(calls.shadow_connections.load(Ordering::Relaxed), 1);
+        assert_eq!(calls.main_connections.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn firebird_missing_factory_keeps_existing_url_or_no_shadow_selection() {
+        let features = psl::PreviewFeatures::empty();
+        assert!(configured_shadow_database_target(None, None, features).is_none());
+        let target = configured_shadow_database_target(None, Some("configured-shadow-url"), features).unwrap();
+        match target {
+            ExternalShadowDatabase::ConnectionString {
+                connection_string,
+                preview_features,
+            } => {
+                assert_eq!(connection_string, "configured-shadow-url");
+                assert_eq!(preview_features, features);
+            }
+            ExternalShadowDatabase::DriverAdapter { .. } => panic!("an adapter factory was fabricated"),
+        }
+    }
+}
+
 fn new_shadow_database_name() -> String {
     format!("prisma_migrate_shadow_db_{}", uuid::Uuid::new_v4())
 }
@@ -662,6 +823,8 @@ async fn best_effort_reset_impl(
     filter: &SchemaFilter,
 ) -> ConnectorResult<()> {
     tracing::info!("Attempting best_effort_reset");
+
+    connector.validate_reset().await?;
 
     let dialect = connector.dialect();
     let source_schema = connector.describe_schema(namespaces).await?;

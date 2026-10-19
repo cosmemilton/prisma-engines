@@ -1,3 +1,4 @@
+# Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 [package]
 name = "query-compiler-wasm"
 version = "0.1.0"
@@ -38,6 +39,7 @@ postgresql = ["psl/postgresql", "query-compiler/postgresql"]
 mysql = ["psl/mysql", "query-compiler/mysql"]
 mssql = ["psl/mssql", "query-compiler/mssql"]
 cockroachdb = ["psl/cockroachdb", "query-compiler/cockroachdb", "postgresql"]
+firebird = ["psl/firebird", "query-compiler/firebird"]
 
 [package.metadata.wasm-pack.profile.release]
 wasm-opt = false # use wasm-opt explicitly in `./build.sh`

@@ -1,9 +1,12 @@
+// Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 #[cfg(feature = "cockroachdb")]
 pub mod cockroach_datamodel_connector;
 pub mod completions;
 
 #[cfg(feature = "cockroachdb")]
 pub use cockroach_datamodel_connector::CockroachType;
+#[cfg(feature = "firebird")]
+pub use firebird_datamodel_connector::FirebirdType;
 #[cfg(feature = "mongodb")]
 pub use mongodb::MongoDbType;
 #[cfg(feature = "mssql")]
@@ -14,6 +17,8 @@ pub use mysql_datamodel_connector::MySqlType;
 pub use postgres_datamodel_connector::{KnownPostgresType, PostgresDatasourceProperties, PostgresType};
 
 mod capabilities_support;
+#[cfg(feature = "firebird")]
+mod firebird_datamodel_connector;
 #[cfg(feature = "mongodb")]
 mod mongodb;
 #[cfg(feature = "mssql")]
@@ -47,6 +52,9 @@ pub const MSSQL: &'static dyn crate::datamodel_connector::Connector =
     &mssql_datamodel_connector::MsSqlDatamodelConnector;
 #[cfg(feature = "mongodb")]
 pub const MONGODB: &'static dyn crate::datamodel_connector::Connector = &mongodb::MongoDbDatamodelConnector;
+#[cfg(feature = "firebird")]
+pub const FIREBIRD: &'static dyn crate::datamodel_connector::Connector =
+    &firebird_datamodel_connector::FirebirdDatamodelConnector;
 
 pub static BUILTIN_CONNECTORS: ConnectorRegistry<'static> = &[
     #[cfg(feature = "postgresql")]
@@ -61,4 +69,6 @@ pub static BUILTIN_CONNECTORS: ConnectorRegistry<'static> = &[
     COCKROACH,
     #[cfg(feature = "mongodb")]
     MONGODB,
+    #[cfg(feature = "firebird")]
+    FIREBIRD,
 ];

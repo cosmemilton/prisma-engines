@@ -1,3 +1,4 @@
+# Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 [package]
 name = "schema-engine-wasm"
 version = "0.1.0"
@@ -12,6 +13,7 @@ name = "schema_engine_wasm"
 workspace = true
 
 [features]
+firebird = ["driver-adapters/firebird", "psl/firebird", "sql-schema-connector/firebird", "commands/firebird"]
 # useful for local intellisense, as long as `all-native` is disabled in `schema-engine-cli`
 # default = ["sqlite"]
 sqlite = [

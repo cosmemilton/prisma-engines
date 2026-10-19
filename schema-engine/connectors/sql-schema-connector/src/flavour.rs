@@ -1,9 +1,13 @@
+// Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 //! SQL flavours implement behaviour specific to a given SQL implementation (PostgreSQL, SQLite...),
 //! in order to avoid cluttering the connector with conditionals. This is a private implementation
 //! detail of the SQL connector.
 
 #[cfg(feature = "mssql")]
 mod mssql;
+
+#[cfg(feature = "firebird")]
+mod firebird;
 
 #[cfg(feature = "mysql")]
 mod mysql;
@@ -16,6 +20,9 @@ mod sqlite;
 
 #[cfg(feature = "mssql")]
 pub(crate) use mssql::{MssqlConnector, MssqlDialect};
+
+#[cfg(feature = "firebird")]
+pub(crate) use firebird::{FirebirdConnector, FirebirdDialect};
 
 #[cfg(feature = "mysql")]
 pub(crate) use mysql::{MysqlConnector, MysqlDialect};
@@ -305,6 +312,11 @@ pub(crate) trait SqlConnector: Send + Sync + Debug {
     ) -> BoxFuture<'a, ConnectorResult<quaint::prelude::ResultSet>>;
 
     fn raw_cmd<'a>(&'a mut self, sql: &'a str) -> BoxFuture<'a, ConnectorResult<()>>;
+
+    /// Reject schema objects which a filtered reset cannot remove, before its first mutation.
+    fn validate_reset(&mut self) -> BoxFuture<'_, ConnectorResult<()>> {
+        Box::pin(async { Ok(()) })
+    }
 
     /// Drop the database and recreate it empty.
     fn reset(&mut self, namespaces: Option<Namespaces>) -> BoxFuture<'_, ConnectorResult<()>>;

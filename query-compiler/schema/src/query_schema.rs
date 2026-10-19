@@ -1,7 +1,10 @@
+// Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 use crate::{IdentifierType, ObjectType, OutputField};
 use psl::{
     PreviewFeature, PreviewFeatures, can_support_relation_load_strategy,
-    datamodel_connector::{Connector, ConnectorCapabilities, ConnectorCapability, JoinStrategySupport, RelationMode},
+    datamodel_connector::{
+        Connector, ConnectorCapabilities, ConnectorCapability, Flavour, JoinStrategySupport, RelationMode,
+    },
     has_capability, parser_database as db,
 };
 use query_structure::InternalDataModel;
@@ -110,6 +113,15 @@ impl QuerySchema {
             .map(|feature| self.has_feature(feature))
             .unwrap_or(true)
             && self.has_capability(ConnectorCapability::NativeFullTextSearch)
+    }
+
+    pub(crate) fn can_create_many_and_return(&self) -> bool {
+        // Firebird 3 DSQL RETURNING is a singleton. Its CreateMany support uses
+        // separate INSERT statements, while the public bulk-returning API stays
+        // unavailable until its complete contract is supported.
+        self.has_capability(ConnectorCapability::CreateMany)
+            && self.has_capability(ConnectorCapability::InsertReturning)
+            && !matches!(self.connector.flavour(), Flavour::Firebird)
     }
 
     /// Returns whether the loaded connector supports the join strategy.

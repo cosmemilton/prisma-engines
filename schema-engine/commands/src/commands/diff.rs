@@ -1,3 +1,4 @@
+// Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 use std::sync::Arc;
 
 use crate::{
@@ -58,14 +59,85 @@ pub async fn diff(
         .or(conn_to)
         .ok_or_else(|| ConnectorError::from_msg("Could not determine the connector to use for diffing.".to_owned()))?;
 
+    render_diff_result(
+        &*dialect,
+        schema_from,
+        schema_to,
+        &filter,
+        params.script,
+        params.exit_code,
+    )
+}
+
+/// Diff only empty schemas and Prisma datamodels, without a connector or an adapter factory.
+///
+/// Live database and migration-directory targets must use [`diff`] instead. Both datamodels
+/// must use the same canonical provider so their database schemas belong to one dialect.
+pub fn diff_datamodels(params: DiffParams, extension_types: &dyn ExtensionTypes) -> CoreResult<DiffResult> {
+    // Reject every connected target before parsing schemas or selecting a dialect.
+    let offline_sources = |target: &DiffTarget| {
+        match target {
+        DiffTarget::Empty => Ok(None),
+        DiffTarget::SchemaDatamodel(schemas) => Ok(Some(schemas.to_psl_input())),
+        _ => Err(CoreError::from_msg(
+            "Offline diff only supports Empty and SchemaDatamodel targets; live database and migration targets require a connector."
+                .to_owned(),
+        )),
+    }
+    };
+    let sources_from = offline_sources(&params.from)?;
+    let sources_to = offline_sources(&params.to)?;
+    let provider_from = sources_from.as_deref().map(schema_provider).transpose()?;
+    let provider_to = sources_to.as_deref().map(schema_provider).transpose()?;
+
+    if let (Some(from), Some(to)) = (provider_from, provider_to)
+        && from != to
+    {
+        return Err(CoreError::from_msg(format!(
+            "Offline diff requires the same provider for both datamodels, got `{from}` and `{to}`."
+        )));
+    }
+
+    let provider = provider_from
+        .or(provider_to)
+        .ok_or_else(|| CoreError::from_msg("Offline diff requires at least one SchemaDatamodel target.".to_owned()))?;
+    let dialect = dialect_for_provider(provider)?;
+    let filter: SchemaFilter = params.filters.into();
+    filter.validate(&*dialect)?;
+
+    let schema_from = sources_from
+        .map(|sources| dialect.schema_from_datamodel(sources, dialect.default_namespace(), extension_types))
+        .transpose()?;
+    let schema_to = sources_to
+        .map(|sources| dialect.schema_from_datamodel(sources, dialect.default_namespace(), extension_types))
+        .transpose()?;
+
+    render_diff_result(
+        &*dialect,
+        schema_from,
+        schema_to,
+        &filter,
+        params.script,
+        params.exit_code,
+    )
+}
+
+fn render_diff_result(
+    dialect: &dyn SchemaDialect,
+    schema_from: Option<DatabaseSchema>,
+    schema_to: Option<DatabaseSchema>,
+    filter: &SchemaFilter,
+    script: bool,
+    exit_code: Option<bool>,
+) -> CoreResult<DiffResult> {
     // The `from` connector takes precedence, because if we think of diffs as migrations, `from` is
     // the target where the migration would be applied.
     let from = schema_from.unwrap_or_else(|| dialect.empty_database_schema());
     let to = schema_to.unwrap_or_else(|| dialect.empty_database_schema());
 
-    let migration = dialect.diff(from, to, &filter);
+    let migration = dialect.diff(from, to, filter);
 
-    let mut stdout = if params.script {
+    let mut stdout = if script {
         dialect.render_script(&migration, &Default::default())?
     } else {
         dialect.migration_summary(&migration)
@@ -75,7 +147,7 @@ pub async fn diff(
         stdout.push('\n');
     }
 
-    let exit_code = if params.exit_code == Some(true) && !dialect.migration_is_empty(&migration) {
+    let exit_code = if exit_code == Some(true) && !dialect.migration_is_empty(&migration) {
         2
     } else {
         0
@@ -182,6 +254,10 @@ async fn diff_target_to_dialect(
 }
 
 fn schema_to_dialect(files: &[(String, SourceFile)]) -> CoreResult<Box<dyn schema_connector::SchemaDialect>> {
+    dialect_for_provider(schema_provider(files)?)
+}
+
+fn schema_provider(files: &[(String, SourceFile)]) -> CoreResult<&'static str> {
     let (_, config) = psl::parse_configuration_multi_file(files)
         .map_err(|(files, err)| CoreError::new_schema_parser_error(files.render_diagnostics(&err)))?;
 
@@ -191,5 +267,8 @@ fn schema_to_dialect(files: &[(String, SourceFile)]) -> CoreResult<Box<dyn schem
         .next()
         .ok_or_else(|| CoreError::from_msg("There is no datasource in the schema.".into()))?;
 
-    dialect_for_provider(source.active_provider)
+    Ok(source.active_provider)
 }
+
+#[cfg(all(test, feature = "firebird"))]
+mod offline_tests;

@@ -1,3 +1,4 @@
+// Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 use super::constraint_namespace::ConstraintNamespace;
 use parser_database::{
     ModelId,
@@ -108,6 +109,11 @@ fn infer_namespaces<'a>(ctx: &super::Context<'a>) -> ConstraintNamespace<'a> {
             ConstraintScope::GlobalPrimaryKeyKeyIndex => {
                 namespaces.add_global_primary_keys(*scope, ctx);
                 namespaces.add_global_indexes(*scope, ctx);
+            }
+            ConstraintScope::GlobalPrimaryKeyKeyIndexForeignKey => {
+                namespaces.add_global_primary_keys(*scope, ctx);
+                namespaces.add_global_indexes(*scope, ctx);
+                namespaces.add_global_relations(*scope, ctx);
             }
             ConstraintScope::GlobalPrimaryKeyForeignKeyDefault => {
                 namespaces.add_global_primary_keys(*scope, ctx);

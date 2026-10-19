@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 # Call this script as `./build.sh <npm_version>`
 #
 # Note: this script started as a copy of the `query-engine-wasm`'s `build.sh` script, but will likely diverge over time.
@@ -11,7 +12,7 @@ OUT_VERSION="${1:-"0.0.0"}"
 OUT_FOLDER="${2:-"schema-engine/schema-engine-wasm/pkg"}"
 OUT_TARGET="bundler"
 REPO_ROOT="$( cd "$( dirname "$CURRENT_DIR/../../../" )" >/dev/null 2>&1 && pwd )"
-WASM_CONNECTORS="sqlite,postgresql"
+WASM_CONNECTORS="sqlite,postgresql,firebird"
 
 # wasm-opt pass
 WASM_OPT_ARGS=(

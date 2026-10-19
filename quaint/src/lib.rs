@@ -1,3 +1,4 @@
+// Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 //! # quaint
 //!
 //! A database client abstraction for reading and writing to an SQL database in a
@@ -107,8 +108,14 @@
 // TODO: remove once `quaint` is no longer a transitive dependency of `mongodb-schema-connector`.
 #![allow(dead_code)]
 
-#[cfg(not(any(feature = "sqlite", feature = "postgresql", feature = "mysql", feature = "mssql")))]
-compile_error!("one of 'sqlite', 'postgresql', 'mysql' or 'mssql' features must be enabled");
+#[cfg(not(any(
+    feature = "sqlite",
+    feature = "postgresql",
+    feature = "mysql",
+    feature = "mssql",
+    feature = "firebird"
+)))]
+compile_error!("one of 'sqlite', 'postgresql', 'mysql', 'mssql' or 'firebird' features must be enabled");
 
 #[macro_use]
 mod macros;

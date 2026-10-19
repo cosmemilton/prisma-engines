@@ -1,3 +1,4 @@
+# Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 [package]
 name = "psl"
 version = "0.1.0"
@@ -10,7 +11,8 @@ mysql = ["psl-core/mysql"]
 cockroachdb = ["psl-core/cockroachdb", "postgresql"]
 mssql = ["psl-core/mssql"]
 mongodb = ["psl-core/mongodb"]
-all = ["postgresql", "sqlite", "mysql", "cockroachdb", "mssql", "mongodb"]
+firebird = ["psl-core/firebird"]
+all = ["postgresql", "sqlite", "mysql", "cockroachdb", "mssql", "mongodb", "firebird"]
 
 [dependencies]
 psl-core.workspace = true

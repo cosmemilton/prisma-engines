@@ -1,0 +1,86 @@
+datasource db {
+  provider = "firebird"
+}
+
+model Item {
+  id              Int       @id @map("ID")
+  code            String    @unique @map("CODE") @db.VarChar(120)
+  quantity        Int       @default(0) @map("QUANTITY")
+  active          Boolean   @default(true) @map("ACTIVE")
+  amount          Decimal?  @map("AMOUNT") @db.Decimal(12, 2)
+  payload         Bytes?    @map("PAYLOAD") @db.Blob
+  createdAt       DateTime? @map("CREATED_AT") @db.Timestamp
+  longMappedField Int? @map("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
+
+  @@map("FB_ITEM")
+}
+
+model CompoundItem {
+  tenant Int    @map("TENANT")
+  id     Int    @map("ID")
+  value  String @map("VALUE") @db.VarChar(120)
+
+  @@id([tenant, id])
+  @@map("FB_COMPOUND")
+}
+
+model AutoItem {
+  id       Int     @id @default(autoincrement()) @map("ID")
+  code     String  @unique @map("CODE") @db.VarChar(120)
+  note     String? @map("NOTE") @db.VarChar(120)
+  quantity Int     @default(7) @map("QUANTITY")
+
+  @@map("FB_AUTO")
+}
+
+model AutoOnly {
+  id Int @id @default(autoincrement()) @map("ID")
+
+  @@map("FB_AUTO_ONLY")
+}
+
+model AutoBigInt {
+  id   BigInt @id @default(autoincrement()) @map("ID")
+  code String @unique @map("CODE") @db.VarChar(120)
+
+  @@map("FB_AUTO_BIGINT")
+}
+
+model MutableCode {
+  code        String         @id @map("CODIGO") @db.VarChar(6)
+  description String?        @map("DESCRICAO") @db.VarChar(120)
+  children    MutableChild[]
+
+  @@map("FB_MUTABLE_CODE")
+}
+
+model MutableChild {
+  id         Int         @id @map("ID")
+  parentCode String      @map("PARENT_CODE") @db.VarChar(6)
+  parent     MutableCode @relation(fields: [parentCode], references: [code], onUpdate: Cascade)
+  value      String?     @map("VALUE") @db.VarChar(120)
+
+  @@map("FB_MUTABLE_CHILD")
+}
+
+model MutableBigInt {
+  id    BigInt  @id @map("ID")
+  value String? @map("VALUE") @db.VarChar(120)
+
+  @@map("FB_MUTABLE_BIGINT")
+}
+
+model AliquotaIbpt {
+  codigo String @id @map("COD_NCM") @db.VarChar(10)
+
+  @@map("IBPT")
+}
+
+model CidadeLegado {
+  codigo    Int    @id @map("COD_MUN")
+  municipio String @map("NOME_MUNICIPIO") @db.VarChar(35)
+  estado    String @map("ESTADO") @db.VarChar(25)
+  sigla     String @map("SIGLA") @db.VarChar(2)
+
+  @@map("CIDADES")
+}

@@ -1,9 +1,11 @@
+# Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 [package]
 edition.workspace = true
 name = "sql-schema-describer"
 version = "0.1.0"
 
 [features]
+firebird = ["psl/firebird", "quaint/firebird"]
 postgresql = ["psl/postgresql", "quaint/postgresql"]
 postgresql-native = ["postgresql", "quaint/postgresql-native", "quaint/pooled"]
 sqlite = ["psl/sqlite", "quaint/sqlite"]

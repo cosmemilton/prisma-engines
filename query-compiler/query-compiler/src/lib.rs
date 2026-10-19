@@ -1,3 +1,4 @@
+// Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 mod binding;
 mod data_mapper;
 pub mod expression;
@@ -46,6 +47,8 @@ pub fn compile(
         SqlFamily::Sqlite => translate(graph, &SqlQueryBuilder::<visitor::Sqlite<'_>>::new(ctx)),
         #[cfg(feature = "mssql")]
         SqlFamily::Mssql => translate(graph, &SqlQueryBuilder::<visitor::Mssql<'_>>::new(ctx)),
+        #[cfg(feature = "firebird")]
+        SqlFamily::Firebird => translate(graph, &SqlQueryBuilder::<visitor::Firebird<'_>>::new(ctx)),
     };
 
     res.map_err(CompileError::TranslateError)

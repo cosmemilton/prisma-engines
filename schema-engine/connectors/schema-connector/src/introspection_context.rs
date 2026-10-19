@@ -1,3 +1,4 @@
+// Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 use std::path::{Path, PathBuf};
 
 use enumflags2::BitFlags;
@@ -108,6 +109,8 @@ impl IntrospectionContext {
     /// The SQL family we're using currently.
     pub fn sql_family(&self) -> SqlFamily {
         match self.datasource().active_provider {
+            #[cfg(feature = "firebird")]
+            "firebird" => SqlFamily::Firebird,
             #[cfg(feature = "postgresql")]
             "postgresql" => SqlFamily::Postgres,
             #[cfg(feature = "cockroachdb")]

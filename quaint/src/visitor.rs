@@ -1,3 +1,4 @@
+// Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 //! Visitors for reading an abstract SQL syntax tree, generating the query and
 //! gathering parameters in the right order.
 //!
@@ -6,6 +7,8 @@
 //! [ast](../ast/index.html) module.
 //!
 //! For prelude, all important imports are in `quaint::visitor::*`;
+#[cfg(feature = "firebird")]
+mod firebird;
 #[cfg(feature = "mssql")]
 mod mssql;
 #[cfg(feature = "mysql")]
@@ -18,6 +21,8 @@ mod sqlite;
 // Generic query writer, used for all SQL flavors
 mod query_writer;
 
+#[cfg(feature = "firebird")]
+pub use self::firebird::Firebird;
 #[cfg(feature = "mssql")]
 pub use self::mssql::Mssql;
 #[cfg(feature = "mysql")]
@@ -268,6 +273,11 @@ pub trait Visitor<'a> {
 
     /// A walk through a `SELECT` statement
     fn visit_select(&mut self, select: Select<'a>) -> Result {
+        self.visit_select_default(select)
+    }
+
+    /// Shared SELECT rendering, after dialect-specific validation or rewriting.
+    fn visit_select_default(&mut self, select: Select<'a>) -> Result {
         let number_of_ctes = select.ctes.len();
 
         if number_of_ctes > 0 {
@@ -621,6 +631,11 @@ pub trait Visitor<'a> {
 
     /// A visit to a value used in an expression
     fn visit_expression(&mut self, value: Expression<'a>) -> Result {
+        self.visit_expression_default(value)
+    }
+
+    /// Shared expression rendering, after dialect-specific validation.
+    fn visit_expression_default(&mut self, value: Expression<'a>) -> Result {
         match value.kind {
             ExpressionKind::Value(value) => self.visit_expression(*value)?,
             ExpressionKind::ConditionTree(tree) => self.visit_conditions(tree)?,
@@ -816,8 +831,20 @@ pub trait Visitor<'a> {
         Ok(())
     }
 
+    fn visit_literal_starts_with(&mut self, _left: Expression<'a>, _right: Expression<'a>, _not: bool) -> Result {
+        Err(crate::error::Error::builder(crate::error::ErrorKind::conversion(
+            "Literal prefix comparison is not supported by this SQL visitor.",
+        ))
+        .build())
+    }
+
     /// A comparison expression
     fn visit_compare(&mut self, compare: Compare<'a>) -> Result {
+        self.visit_compare_default(compare)
+    }
+
+    /// Shared comparison rendering, after dialect-specific validation.
+    fn visit_compare_default(&mut self, compare: Compare<'a>) -> Result {
         match compare {
             Compare::Equals(left, right) => self.visit_equals(*left, *right),
             Compare::NotEquals(left, right) => self.visit_not_equals(*left, *right),
@@ -1085,6 +1112,7 @@ pub trait Visitor<'a> {
             },
             Compare::Like(left, right) => self.visit_like(*left, *right),
             Compare::NotLike(left, right) => self.visit_not_like(*left, *right),
+            Compare::LiteralStartsWith { left, right, not } => self.visit_literal_starts_with(*left, *right, not),
             Compare::Null(column) => {
                 self.visit_expression(*column)?;
                 self.write(" IS NULL")
@@ -1193,6 +1221,11 @@ pub trait Visitor<'a> {
     }
 
     fn visit_function(&mut self, fun: Function<'a>) -> Result {
+        self.visit_function_default(fun)
+    }
+
+    /// Shared function rendering, after dialect-specific validation.
+    fn visit_function_default(&mut self, fun: Function<'a>) -> Result {
         match fun.typ_ {
             FunctionType::RowNumber(fun_rownum) => {
                 if fun_rownum.over.is_empty() {

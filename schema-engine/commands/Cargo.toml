@@ -1,9 +1,11 @@
+# Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 [package]
 edition = "2024"
 name = "schema-commands"
 version = "0.1.0"
 
 [features]
+firebird = ["sql-schema-connector/firebird"]
 postgresql = ["sql-schema-connector/postgresql"]
 postgresql-native = ["postgresql"]
 sqlite = ["sql-schema-connector/sqlite"]

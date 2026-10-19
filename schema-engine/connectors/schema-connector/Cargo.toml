@@ -1,9 +1,11 @@
+# Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 [package]
 name = "schema-connector"
 version = "0.1.0"
 edition.workspace = true
 
 [features]
+firebird = ["psl/firebird", "quaint/firebird"]
 postgresql = ["psl/postgresql", "quaint/postgresql"]
 postgresql-native = ["postgresql", "quaint/postgresql-native", "quaint/pooled"]
 sqlite = ["psl/sqlite", "quaint/sqlite"]

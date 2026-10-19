@@ -1,14 +1,16 @@
+# Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 [package]
 name = "driver-adapters"
 version = "0.1.0"
 edition.workspace = true
 
 [features]
-default = ["mysql", "sqlite", "postgresql", "mssql"]
+default = ["mysql", "sqlite", "postgresql", "mssql", "firebird"]
 mysql = ["quaint/mysql"]
 sqlite = ["quaint/sqlite"]
 postgresql = ["quaint/postgresql"]
 mssql = ["quaint/mssql"]
+firebird = ["quaint/firebird"]
 
 [lints]
 workspace = true

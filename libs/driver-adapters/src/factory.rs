@@ -1,3 +1,4 @@
+// Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -115,6 +116,13 @@ impl ExternalConnector for JsQueryableDropGuard {
         } else {
             Ok(())
         }
+    }
+
+    async fn start_owned_transaction(
+        &self,
+        isolation: Option<IsolationLevel>,
+    ) -> Option<quaint::Result<Box<dyn Transaction + 'static>>> {
+        self.inner.start_owned_transaction(isolation).await
     }
 }
 

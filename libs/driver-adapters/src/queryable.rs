@@ -1,3 +1,4 @@
+// Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 use crate::proxy::{CommonProxy, DriverProxy};
 use crate::types::{AdapterProvider, Query};
 use crate::{JsObject, JsResult};
@@ -58,13 +59,15 @@ impl JsBaseQueryable {
             AdapterProvider::Sqlite => visitor::Sqlite::build(q),
             #[cfg(feature = "mssql")]
             AdapterProvider::SqlServer => visitor::Mssql::build(q),
+            #[cfg(feature = "firebird")]
+            AdapterProvider::Firebird => visitor::Firebird::build(q),
         }
     }
 
     async fn build_query(&self, sql: &str, values: &[quaint::Value<'_>]) -> quaint::Result<Query> {
         let sql: String = sql.to_string();
 
-        let args_converter = match self.provider {
+        let args_converter: fn(&quaint::Value<'_>) -> serde_json::Result<conversion::JSArg> = match self.provider {
             #[cfg(feature = "postgresql")]
             AdapterProvider::Postgres => conversion::postgres::value_to_js_arg,
             #[cfg(feature = "sqlite")]
@@ -73,6 +76,8 @@ impl JsBaseQueryable {
             AdapterProvider::Mysql => conversion::mysql::value_to_js_arg,
             #[cfg(feature = "mssql")]
             AdapterProvider::SqlServer => conversion::mssql::value_to_js_arg,
+            #[cfg(feature = "firebird")]
+            AdapterProvider::Firebird => conversion::firebird::value_to_js_arg,
         };
 
         let args = values
@@ -82,7 +87,13 @@ impl JsBaseQueryable {
 
         let arg_types = values
             .iter()
-            .map(conversion::value_to_js_arg_type)
+            .map(|value| {
+                #[cfg(feature = "firebird")]
+                if matches!(self.provider, AdapterProvider::Firebird) {
+                    return conversion::firebird::value_to_js_arg_type(value);
+                }
+                conversion::value_to_js_arg_type(value)
+            })
             .collect::<Vec<conversion::JSArgType>>();
 
         Ok(Query { sql, args, arg_types })
@@ -108,6 +119,15 @@ impl QuaintQueryable for JsBaseQueryable {
     }
 
     async fn describe_query(&self, sql: &str) -> quaint::Result<DescribedQuery> {
+        #[cfg(feature = "firebird")]
+        if matches!(self.provider, AdapterProvider::Firebird) {
+            return Err(
+                quaint::error::Error::builder(quaint::error::ErrorKind::QueryInvalidInput(
+                    "TypedSQL query introspection is not implemented for Firebird".into(),
+                ))
+                .build(),
+            );
+        }
         self.describe_query(sql).await
     }
 
@@ -147,8 +167,17 @@ impl QuaintQueryable for JsBaseQueryable {
             AdapterProvider::Sqlite => visitor::Sqlite::version_expr(),
             #[cfg(feature = "mssql")]
             AdapterProvider::SqlServer => visitor::Mssql::version_expr(),
+            #[cfg(feature = "firebird")]
+            AdapterProvider::Firebird => "RDB$GET_CONTEXT('SYSTEM', 'ENGINE_VERSION')",
         };
 
+        #[cfg(feature = "firebird")]
+        let query = if matches!(self.provider, AdapterProvider::Firebird) {
+            format!(r#"SELECT {version_expr} AS "version" FROM RDB$DATABASE"#)
+        } else {
+            format!(r#"SELECT {version_expr} AS version"#)
+        };
+        #[cfg(not(feature = "firebird"))]
         let query = format!(r#"SELECT {version_expr} AS version"#);
         let rows = self.query_raw(query.as_str(), &[]).await?;
 
@@ -181,6 +210,8 @@ impl QuaintQueryable for JsBaseQueryable {
             AdapterProvider::Sqlite => false,
             #[cfg(feature = "mssql")]
             AdapterProvider::SqlServer => true,
+            #[cfg(feature = "firebird")]
+            AdapterProvider::Firebird => false,
         }
     }
 }
@@ -309,6 +340,23 @@ impl ExternalConnector for JsQueryable {
 
     async fn dispose(&self) -> quaint::Result<()> {
         self.driver_proxy.dispose().await
+    }
+
+    async fn start_owned_transaction(
+        &self,
+        isolation: Option<IsolationLevel>,
+    ) -> Option<quaint::Result<Box<dyn Transaction + 'static>>> {
+        Some(
+            UnsafeFuture(async {
+                let tx = self.driver_proxy.start_transaction(isolation).await?;
+                if let Err(error) = self.server_reset_query(tx.as_ref()).await {
+                    let _ = tx.rollback().await;
+                    return Err(error);
+                }
+                Ok(tx as Box<dyn Transaction + 'static>)
+            })
+            .await,
+        )
     }
 }
 

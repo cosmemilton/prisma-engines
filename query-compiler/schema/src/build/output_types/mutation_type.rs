@@ -1,3 +1,4 @@
+// Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 use super::*;
 use input_types::fields::arguments;
 use mutations::{create_many, create_many_and_return, create_one};
@@ -28,7 +29,7 @@ pub(crate) fn mutation_fields(ctx: &QuerySchema) -> Vec<FieldFn> {
             if ctx.has_capability(ConnectorCapability::CreateMany) {
                 field!(create_many, model);
 
-                if ctx.has_capability(ConnectorCapability::InsertReturning) {
+                if ctx.can_create_many_and_return() {
                     field!(create_many_and_return, model);
                 }
             }

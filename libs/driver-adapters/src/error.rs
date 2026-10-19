@@ -1,3 +1,4 @@
+// Modified for experimental Firebird support (2026-10-18); see MODIFICATIONS.md.
 #[cfg(feature = "mysql")]
 use quaint::error::MysqlError;
 
@@ -119,6 +120,13 @@ pub(crate) enum MappedDriverAdapterError {
     ValueOutOfRange {
         cause: String,
     },
+    InvalidInputValue {
+        message: String,
+    },
+    SocketTimeout,
+    InconsistentColumnData {
+        cause: String,
+    },
     MissingFullTextSearchIndex,
     TransactionAlreadyClosed {
         cause: String,
@@ -135,6 +143,12 @@ pub(crate) enum MappedDriverAdapterError {
     #[cfg(feature = "mssql")]
     #[serde(rename = "mssql")]
     Mssql(#[serde(with = "MssqlErrorDef")] MssqlError),
+    #[cfg(feature = "firebird")]
+    #[serde(rename = "firebird")]
+    Firebird {
+        code: i32,
+        message: String,
+    },
 }
 
 #[derive(Deserialize)]
@@ -152,5 +166,63 @@ impl From<DriverAdapterConstraint> for quaint::error::DatabaseConstraint {
             DriverAdapterConstraint::Index(index) => quaint::error::DatabaseConstraint::Index(index),
             DriverAdapterConstraint::ForeignKey => quaint::error::DatabaseConstraint::ForeignKey,
         }
+    }
+}
+
+#[cfg(all(test, feature = "firebird"))]
+mod firebird_error_contract_tests {
+    use super::*;
+    use quaint::error::{Error, ErrorKind};
+
+    fn convert(payload: &str) -> Error {
+        serde_json::from_str::<DriverAdapterError>(payload).unwrap().into()
+    }
+
+    #[test]
+    fn firebird_invalid_input_guard_keeps_its_actionable_message() {
+        let error = convert(
+            r#"{"kind":"InvalidInputValue","message":"Firebird migration history requires an explicit, separate shadowDatabase"}"#,
+        );
+        assert!(
+            matches!(error.kind(), ErrorKind::QueryInvalidInput(message) if message.contains("separate shadowDatabase"))
+        );
+        assert!(error.to_string().contains("separate shadowDatabase"));
+    }
+
+    #[test]
+    fn firebird_native_error_keeps_gds_and_original_diagnostics() {
+        let error = convert(
+            r#"{"kind":"firebird","code":335544569,"message":"SQL error code = -104","originalCode":"335544569","originalMessage":"Dynamic SQL Error: SQL error code = -104"}"#,
+        );
+        assert!(
+            matches!(error.kind(), ErrorKind::RawConnectorError { status, reason } if status == "335544569" && reason == "SQL error code = -104")
+        );
+        assert_eq!(error.original_code(), Some("335544569"));
+        assert_eq!(
+            error.original_message(),
+            Some("Dynamic SQL Error: SQL error code = -104")
+        );
+
+        let fallback = convert(r#"{"kind":"firebird","code":335544569,"message":"retained native diagnostic"}"#);
+        assert_eq!(fallback.original_code(), Some("335544569"));
+        assert_eq!(fallback.original_message(), Some("retained native diagnostic"));
+    }
+
+    #[test]
+    fn firebird_timeout_and_column_conversion_errors_keep_their_shapes() {
+        let timeout =
+            convert(r#"{"kind":"SocketTimeout","originalCode":"ETIMEDOUT","originalMessage":"socket timed out"}"#);
+        assert!(matches!(timeout.kind(), ErrorKind::SocketTimeout));
+        assert_eq!(timeout.original_code(), Some("ETIMEDOUT"));
+        assert_eq!(timeout.original_message(), Some("socket timed out"));
+
+        let conversion = convert(r#"{"kind":"InconsistentColumnData","cause":"Invalid UTF8 BLOB"}"#);
+        assert!(matches!(conversion.kind(), ErrorKind::ConversionError(cause) if cause.as_ref() == "Invalid UTF8 BLOB"));
+    }
+
+    #[test]
+    fn firebird_malformed_error_contract_is_not_silently_swallowed() {
+        assert!(serde_json::from_str::<DriverAdapterError>(r#"{"kind":"firebird","message":"missing code"}"#).is_err());
+        assert!(serde_json::from_str::<DriverAdapterError>(r#"{"kind":"InvalidInputValue"}"#).is_err());
     }
 }
