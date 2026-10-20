@@ -252,5 +252,44 @@ test('validate rejects supplementary Unicode and trailing ASCII spaces in mapped
   }
 })
 
+test('get_dmmf isolates server currentDate writes to native Firebird DATE fields', () => {
+  for (const fields of [
+    'day DateTime @db.Date\n  stamp DateTime @db.Timestamp\n  nullableDay DateTime? @db.Date\n  clock DateTime? @db.Time',
+    'stamp DateTime @db.Timestamp\n  clock DateTime? @db.Time\n  nullableDay DateTime? @db.Date\n  day DateTime @db.Date',
+  ]) {
+    const text = `${datasource}\nmodel DateWrite {\n  id Int @id\n  ${fields}\n}\n`
+    const result = JSON.parse(prismaSchema.get_dmmf(request(text)))
+    const inputs = new Map(result.schema.inputObjectTypes.prisma.map((type) => [type.name, type]))
+    const create = inputs.get('DateWriteCreateInput')
+    assert.ok(create)
+    const field = (name) => create.fields.find((candidate) => candidate.name === name)
+    const types = (name) => field(name).inputTypes.map((type) => type.type)
+    assert.deepEqual(types('day'), ['DateTime', 'FirebirdCurrentDateInput'])
+    assert.deepEqual(types('nullableDay'), ['DateTime', 'FirebirdCurrentDateInput', 'Null'])
+    assert.equal(field('day').isRequired, true)
+    assert.equal(field('nullableDay').isRequired, false)
+    assert.deepEqual(types('stamp'), ['DateTime'])
+    assert.deepEqual(types('clock'), ['DateTime', 'Null'])
+    for (const name of ['FirebirdCurrentDateInput', 'FirebirdDateFieldUpdateOperationsInput', 'NullableFirebirdDateFieldUpdateOperationsInput']) {
+      const flag = inputs.get(name)?.fields.find((candidate) => candidate.name === 'currentDate')
+      assert.ok(flag, name)
+      assert.equal(flag.isParameterizable, false)
+      assert.deepEqual(flag.inputTypes.map((type) => type.type), ['Boolean'])
+    }
+    for (const name of ['DateTimeFieldUpdateOperationsInput', 'NullableDateTimeFieldUpdateOperationsInput']) {
+      assert.equal(inputs.get(name)?.fields.some((candidate) => candidate.name === 'currentDate'), false)
+    }
+    const many = inputs.get('DateWriteCreateManyInput')
+    assert.ok(many.fields.find((candidate) => candidate.name === 'day').inputTypes.some((type) => type.type === 'FirebirdCurrentDateInput'))
+  }
+})
+
+test('get_dmmf does not expose the Firebird currentDate operation to PostgreSQL DATE', () => {
+  const text = 'datasource db {\n  provider = "postgresql"\n}\nmodel DateWrite {\n  id Int @id\n  day DateTime @db.Date\n}\n'
+  const result = JSON.parse(prismaSchema.get_dmmf(request(text)))
+  assert.equal(result.schema.inputObjectTypes.prisma.some((type) =>
+    type.fields.some((field) => field.name === 'currentDate')), false)
+})
+
 // Generated Client CRUD is verified by the paired ORM integration suite at
 // docs/plans/firebird/tests/generated-client.test.ts, independently of schema APIs.

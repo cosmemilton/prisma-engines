@@ -1,11 +1,19 @@
+// Modified for experimental Firebird support (2026-10-20); see MODIFICATIONS.md.
 use crate::limit::wrap_with_limit_subquery_if_needed;
 use crate::{Context, model_extensions::*, sql_trace::SqlTraceComment};
 use crate::{FilterBuilder, update};
 use itertools::Itertools;
 use quaint::ast::*;
 use query_structure::*;
-use std::collections::HashMap;
-use std::{collections::HashSet, convert::TryInto};
+use std::collections::{HashMap, HashSet};
+
+fn create_value(field: &ScalarFieldRef, value: WriteOperation, ctx: &Context<'_>) -> Expression<'static> {
+    match value.try_into_scalar().unwrap() {
+        ScalarWriteOperation::Set(value) => field.value(value, ctx).into(),
+        ScalarWriteOperation::CurrentDate => current_date(),
+        _ => unreachable!("Create calls can only use scalar set or current date write operations"),
+    }
+}
 
 /// `INSERT` a new record to the database. Resulting an `INSERT` ast and an
 /// optional `RecordProjection` if available from the arguments or model.
@@ -26,11 +34,8 @@ pub fn create_record(
         .fold(Insert::single_into(model.as_table(ctx)), |insert, field| {
             let db_name = field.db_name();
             let value = args.take_field_value(db_name).unwrap();
-            let value: PrismaValue = value
-                .try_into()
-                .expect("Create calls can only use PrismaValue write expressions (right now).");
 
-            insert.value(db_name.to_owned(), field.value(value, ctx))
+            insert.value(db_name.to_owned(), create_value(&field, value, ctx))
         });
 
     Insert::from(insert)
@@ -66,11 +71,7 @@ pub fn create_records_nonempty(
 
                 match value {
                     Some(write_op) => {
-                        let value: PrismaValue = write_op
-                            .try_into()
-                            .expect("Create calls can only use PrismaValue write expressions (right now).");
-
-                        row.push(field.value(value, ctx).into());
+                        row.push(create_value(field, write_op, ctx));
                     }
                     // We can't use `DEFAULT` for SQLite so we provided an explicit `NULL` instead.
                     None if !field.is_required() && field.default_value().is_none() => {
@@ -161,6 +162,7 @@ pub fn build_update_and_set_query(
             let value: Expression = match val.try_into_scalar().unwrap() {
                 ScalarWriteOperation::Field(_) => unimplemented!(),
                 ScalarWriteOperation::Set(rhs) => field.value(rhs, ctx).into(),
+                ScalarWriteOperation::CurrentDate => current_date(),
                 ScalarWriteOperation::Add(rhs) if field.is_list() => {
                     let e: Expression = Column::from((table.clone(), name.clone())).into();
                     let arr = match rhs {

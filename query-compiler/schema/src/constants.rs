@@ -1,3 +1,4 @@
+// Modified for experimental Firebird support (2026-10-20); see MODIFICATIONS.md.
 pub mod args {
     pub const WHERE: &str = "where";
     pub const DATA: &str = "data";
@@ -41,6 +42,7 @@ pub mod operations {
     pub const DELETE_MANY: &str = "deleteMany";
     pub const UPSERT: &str = "upsert";
     pub const SET: &str = "set";
+    pub const CURRENT_DATE: &str = "currentDate";
 
     // scalar lists and composites
     pub const PUSH: &str = "push";

@@ -1,3 +1,4 @@
+// Modified for experimental Firebird support (2026-10-20); see MODIFICATIONS.md.
 use super::*;
 use crate::query_document::{ParsedInputMap, ParsedInputValue};
 use query_structure::{
@@ -78,6 +79,14 @@ fn parse_scalar(sf: &ScalarFieldRef, v: ParsedInputValue<'_>) -> Result<WriteOpe
             let value: PrismaValue = value.try_into()?;
 
             let write_op = match operation.as_ref() {
+                operations::CURRENT_DATE => {
+                    if !sf.supports_current_date_write() || value != PrismaValue::Boolean(true) {
+                        return Err(QueryGraphBuilderError::InputError(
+                            "currentDate requires true on a Firebird Date field".to_owned(),
+                        ));
+                    }
+                    WriteOperation::scalar_current_date()
+                }
                 operations::SET => WriteOperation::scalar_set(value),
                 operations::UNSET => WriteOperation::scalar_unset(*value.as_boolean().unwrap()),
                 operations::INCREMENT => WriteOperation::scalar_add(value),

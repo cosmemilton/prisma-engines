@@ -190,3 +190,7 @@ before consolidating documentation; do not rewrite old receipts.
 On constrained Windows hosts, use native tooling, bound Cargo jobs and test
 workers, and coordinate builds with the user. Run checks proportional to the
 change; a documentation edit does not require a full Rust/Wasm rebuild.
+
+Native Firebird DATE write inputs use distinct identifiers from DateTime/TIMESTAMP
+operations; sharing their identifier can pollute the cached input schema. The
+currentDate flag is a compile-time operation, not a bind parameter or client clock.

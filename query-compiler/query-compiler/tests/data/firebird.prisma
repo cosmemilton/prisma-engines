@@ -84,3 +84,31 @@ model CidadeLegado {
 
   @@map("CIDADES")
 }
+
+model DateExprProbe {
+  id          Int             @id @default(dbgenerated()) @map("ID")
+  createdDate DateTime        @map("CREATED_DATE") @db.Date
+  usedDate    DateTime?       @map("USED_DATE") @db.Date
+  timestamp   DateTime?       @map("STAMP") @db.Timestamp
+  time        DateTime?       @map("CLOCK_TIME") @db.Time
+  status      String?         @map("STATUS") @db.VarChar(1)
+  children    DateExprChild[]
+
+  @@map("DATE_EXPR_PROBE")
+}
+
+model DateExprChild {
+  id          Int           @id @map("ID")
+  probeId     Int           @map("PROBE_ID")
+  probe       DateExprProbe @relation(fields: [probeId], references: [id], onUpdate: Cascade)
+  createdDate DateTime      @map("CREATED_DATE") @db.Date
+
+  @@map("DATE_EXPR_CHILD")
+}
+
+model DateKeyProbe {
+  date  DateTime @id @map("DATE_KEY") @db.Date
+  value String?  @map("VALUE") @db.VarChar(120)
+
+  @@map("DATE_KEY_PROBE")
+}

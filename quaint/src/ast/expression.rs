@@ -1,3 +1,4 @@
+// Modified for experimental Firebird support (2026-10-20); see MODIFICATIONS.md.
 use super::compare::{JsonCompare, JsonType};
 use crate::ast::*;
 use query::SelectQuery;
@@ -296,6 +297,8 @@ pub enum ExpressionKind<'a> {
     Value(Box<Expression<'a>>),
     /// DEFAULT keyword, e.g. for `INSERT INTO ... VALUES (..., DEFAULT, ...)`
     Default,
+    /// The database server's current DATE value, evaluated within the statement.
+    CurrentDate,
 }
 
 impl ExpressionKind<'_> {
@@ -329,6 +332,14 @@ pub fn asterisk() -> Expression<'static> {
 pub fn default_value() -> Expression<'static> {
     Expression {
         kind: ExpressionKind::Default,
+        alias: None,
+    }
+}
+
+/// The database server's current DATE value, evaluated within the statement.
+pub fn current_date() -> Expression<'static> {
+    Expression {
+        kind: ExpressionKind::CurrentDate,
         alias: None,
     }
 }

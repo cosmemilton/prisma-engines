@@ -1,3 +1,4 @@
+// Modified for experimental Firebird support (2026-10-20); see MODIFICATIONS.md.
 use super::*;
 use constants::*;
 use query_structure::CompositeFieldRef;
@@ -30,10 +31,16 @@ impl DataInputFieldMapper for CreateDataInputFieldMapper {
                     .parameterizable()
             }
 
-            _ => input_field(sf.name().to_owned(), vec![typ], sf.default_value())
-                .optional_if(!sf.is_required() || sf.default_value().is_some() || sf.is_updated_at())
-                .nullable_if(!sf.is_required())
-                .parameterizable(),
+            _ => {
+                let mut types = vec![typ];
+                if sf.supports_current_date_write() {
+                    types.push(current_date_input_type());
+                }
+                input_field(sf.name().to_owned(), types, sf.default_value())
+                    .optional_if(!sf.is_required() || sf.default_value().is_some() || sf.is_updated_at())
+                    .nullable_if(!sf.is_required())
+                    .parameterizable()
+            }
         }
     }
 

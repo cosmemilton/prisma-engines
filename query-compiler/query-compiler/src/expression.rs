@@ -1,3 +1,4 @@
+// Modified for experimental Firebird support (2026-10-20); see MODIFICATIONS.md.
 use std::{
     borrow::Cow,
     collections::{BTreeMap, HashMap},
@@ -331,7 +332,9 @@ impl TryFrom<ScalarWriteOperation> for FieldOperation {
             ScalarWriteOperation::Subtract(val) => Ok(Self::Subtract(val)),
             ScalarWriteOperation::Multiply(val) => Ok(Self::Multiply(val)),
             ScalarWriteOperation::Divide(val) => Ok(Self::Divide(val)),
-            ScalarWriteOperation::Field(_) | ScalarWriteOperation::Unset(_) => Err(UnsupportedScalarWriteOperation(op)),
+            ScalarWriteOperation::Field(_) | ScalarWriteOperation::Unset(_) | ScalarWriteOperation::CurrentDate => {
+                Err(UnsupportedScalarWriteOperation(op))
+            }
         }
     }
 }

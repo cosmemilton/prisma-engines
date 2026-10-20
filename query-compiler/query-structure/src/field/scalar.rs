@@ -1,3 +1,4 @@
+// Modified for experimental Firebird support (2026-10-20); see MODIFICATIONS.md.
 use crate::{DefaultKind, NativeTypeInstance, ValueGenerator, ast, parent_container::ParentContainer, prelude::*};
 use chrono::{DateTime, FixedOffset};
 use psl::{
@@ -17,6 +18,14 @@ pub enum ScalarFieldId {
 }
 
 impl ScalarField {
+    /// Whether this field can evaluate CURRENT_DATE in a database write.
+    pub fn supports_current_date_write(&self) -> bool {
+        self.dm.schema.connector.flavour() == psl::datamodel_connector::Flavour::Firebird
+            && !self.is_list()
+            && self.type_identifier() == TypeIdentifier::DateTime
+            && self.native_type().is_some_and(|native| native.name() == "Date")
+    }
+
     pub fn is_id(&self) -> bool {
         match self.id {
             ScalarFieldId::InModel(id) => self.dm.walk(id).is_single_pk(),

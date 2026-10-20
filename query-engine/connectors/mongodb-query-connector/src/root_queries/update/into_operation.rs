@@ -1,3 +1,4 @@
+// Modified for experimental Firebird support (2026-10-20); see MODIFICATIONS.md.
 use super::operation::*;
 use crate::*;
 
@@ -47,6 +48,7 @@ impl IntoUpdateOperation for ScalarWriteOperation {
             ScalarWriteOperation::Unset(true) => Some(UpdateOperation::unset(field_path)),
             ScalarWriteOperation::Unset(false) => None,
             ScalarWriteOperation::Field(_) => unimplemented!(),
+            ScalarWriteOperation::CurrentDate => unreachable!("CURRENT_DATE is only exposed by the Firebird connector"),
         };
 
         if let Some(doc) = doc { Ok(vec![doc]) } else { Ok(vec![]) }

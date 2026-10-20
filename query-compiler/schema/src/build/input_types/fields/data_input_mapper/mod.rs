@@ -1,3 +1,4 @@
+// Modified for experimental Firebird support (2026-10-20); see MODIFICATIONS.md.
 mod create;
 mod update;
 
@@ -6,6 +7,19 @@ pub(crate) use update::*;
 
 use super::*;
 use query_structure::prelude::*;
+
+fn current_date_input_type<'a>() -> InputType<'a> {
+    let mut object = init_input_object_type(Identifier::new_prisma("FirebirdCurrentDateInput"));
+    object.require_exactly_one_field();
+    object.set_fields(|| {
+        vec![simple_input_field(
+            constants::operations::CURRENT_DATE,
+            InputType::boolean(),
+            None,
+        )]
+    });
+    InputType::object(object)
+}
 
 // Todo: This isn't final, this is only the first draft to get structure into the
 // wild cross-dependency waste that was the create/update inputs.

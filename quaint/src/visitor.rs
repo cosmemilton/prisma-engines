@@ -659,6 +659,7 @@ pub trait Visitor<'a> {
                 None => self.write("*")?,
             },
             ExpressionKind::Default => self.write("DEFAULT")?,
+            ExpressionKind::CurrentDate => self.visit_current_date()?,
         }
 
         if let Some(alias) = value.alias {
@@ -668,6 +669,13 @@ pub trait Visitor<'a> {
         };
 
         Ok(())
+    }
+
+    fn visit_current_date(&mut self) -> Result {
+        Err(crate::error::Error::builder(crate::error::ErrorKind::conversion(
+            "CURRENT_DATE is not supported by this SQL visitor.",
+        ))
+        .build())
     }
 
     fn visit_multiple_tuple_comparison(&mut self, left: Row<'a>, right: Values<'a>, negate: bool) -> Result {

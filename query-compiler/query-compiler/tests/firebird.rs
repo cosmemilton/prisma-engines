@@ -433,6 +433,433 @@ fn create_uses_one_firebird_insert_returning_with_mapped_columns() {
 }
 
 #[test]
+fn current_date_create_omits_the_generated_identifier_and_requests_singleton_returning() {
+    let plan = compile_model(
+        "DateExprProbe",
+        "createOne",
+        json!({ "data": { "createdDate": { "currentDate": true }, "status": "1" } }),
+        json!({ "id": true, "createdDate": true }),
+    );
+    let statements = statements(&plan);
+    assert_eq!(statements.len(), 1, "{plan:#}");
+    let query = sql(statements[0]);
+    let (insert, returning) = query.split_once(" RETURNING ").unwrap();
+    assert!(insert.starts_with("INSERT INTO \"DATE_EXPR_PROBE\""), "{query}");
+    assert!(insert.contains("\"CREATED_DATE\""), "{query}");
+    assert!(!insert.contains("\"ID\"") && !insert.contains("DEFAULT"), "{query}");
+    assert_eq!(insert.matches("CURRENT_DATE").count(), 1, "{query}");
+    assert_eq!(returning, "\"ID\", \"CREATED_DATE\"");
+    assert_eq!(statements[0]["args"], json!(["1"]));
+    assert!(expressions(&plan, "initializeRecord").is_empty(), "{plan:#}");
+}
+
+#[test]
+fn current_date_update_keeps_other_assignments_returning_and_the_transactional_result_read() {
+    let plan = compile_model(
+        "DateExprProbe",
+        "updateOne",
+        json!({ "where": { "id": 41 }, "data": { "usedDate": { "currentDate": true }, "status": "2" } }),
+        json!({ "id": true, "usedDate": true, "status": true }),
+    );
+    assert_returned_identifier(&plan, "DATE_EXPR_PROBE", &["ID"]);
+    let plan_statements = statements(&plan);
+    assert_eq!(plan_statements.len(), 3, "{plan:#}");
+    let update = plan_statements
+        .iter()
+        .find(|statement| sql(statement).starts_with("UPDATE "))
+        .unwrap();
+    let query = sql(update);
+    assert!(query.contains("\"USED_DATE\" = CURRENT_DATE"), "{query}");
+    assert!(query.contains("\"STATUS\" = ?"), "{query}");
+    let ordinary_plan = compile_model(
+        "DateExprProbe",
+        "updateOne",
+        json!({ "where": { "id": 41 }, "data": { "usedDate": "2024-03-04T00:00:00.000Z", "status": "2" } }),
+        json!({ "id": true, "usedDate": true, "status": true }),
+    );
+    let ordinary_statements = statements(&ordinary_plan);
+    let ordinary_update = ordinary_statements
+        .iter()
+        .find(|statement| sql(statement).starts_with("UPDATE "))
+        .unwrap();
+    let ordinary_args = ordinary_update["args"].as_array().unwrap();
+    let expression_args = update["args"].as_array().unwrap();
+    assert_eq!(expression_args.len(), 3, "{plan:#}");
+    assert_eq!(
+        expression_args,
+        &ordinary_args[1..],
+        "status and both identifier predicates must stay bound"
+    );
+    assert_eq!(expression_args[0], json!("2"), "{plan:#}");
+    assert!(!expression_args.contains(&json!(true)), "{plan:#}");
+    assert_eq!(query.matches("CURRENT_DATE").count(), 1, "{query}");
+}
+
+#[test]
+fn current_date_create_many_keeps_singleton_statements_mixed_values_and_shape_splitting() {
+    let plan = compile_model(
+        "DateExprProbe",
+        "createMany",
+        json!({ "data": [
+            { "createdDate": { "currentDate": true }, "status": "1" },
+            { "id": 42, "createdDate": "2024-03-04T00:00:00.000Z", "usedDate": { "currentDate": true }, "status": "2" },
+            { "createdDate": { "currentDate": true }, "usedDate": null, "status": "3" },
+        ] }),
+        json!({ "count": true }),
+    );
+    let statements = statements(&plan);
+    assert_eq!(statements.len(), 3, "{plan:#}");
+    assert_eq!(expressions(&plan, "transaction").len(), 1, "{plan:#}");
+    assert_eq!(expressions(&plan, "execute").len(), 3, "{plan:#}");
+    for statement in statements {
+        let query = sql(statement);
+        let args = statement["args"].as_array().unwrap();
+        assert!(query.starts_with("INSERT INTO \"DATE_EXPR_PROBE\""), "{query}");
+        assert_eq!(query.matches("CURRENT_DATE").count(), 1, "{query}");
+        assert!(
+            !query.contains("RETURNING") && !query.contains("DEFAULT") && !query.contains("), ("),
+            "{query}"
+        );
+        assert_eq!(query.contains("\"ID\""), args.contains(&json!("2")), "{query}");
+        assert!(
+            !args.contains(&json!(true)) && !args.contains(&json!("CURRENT_DATE")),
+            "{plan:#}"
+        );
+    }
+}
+
+#[test]
+fn current_date_update_many_uses_no_returning_or_server_clock_bind() {
+    let plan = compile_model(
+        "DateExprProbe",
+        "updateMany",
+        json!({ "where": { "id": { "gte": 41 } }, "data": { "usedDate": { "currentDate": true }, "status": "2" } }),
+        json!({ "count": true }),
+    );
+    let statements = statements(&plan);
+    assert_eq!(statements.len(), 1, "{plan:#}");
+    let query = sql(statements[0]);
+    assert!(query.contains("\"USED_DATE\" = CURRENT_DATE"), "{query}");
+    assert!(query.contains("\"STATUS\" = ?"), "{query}");
+    assert!(!query.contains("RETURNING"), "{query}");
+    assert_eq!(statements[0]["args"].as_array().unwrap().len(), 2, "{plan:#}");
+}
+
+#[test]
+fn current_date_upsert_stays_in_each_existing_transactional_write_branch() {
+    let plan = compile_model(
+        "DateExprProbe",
+        "upsertOne",
+        json!({
+            "where": { "id": 41 },
+            "create": { "createdDate": { "currentDate": true }, "status": "1" },
+            "update": { "usedDate": { "currentDate": true }, "status": "2" },
+        }),
+        json!({ "id": true, "createdDate": true, "usedDate": true }),
+    );
+    assert_returned_identifier(&plan, "DATE_EXPR_PROBE", &["ID"]);
+    let queries: Vec<_> = statements(&plan).into_iter().map(sql).collect();
+    let writes: Vec<_> = queries
+        .iter()
+        .filter(|query| query.starts_with("INSERT INTO ") || query.starts_with("UPDATE "))
+        .collect();
+    assert_eq!(writes.len(), 2, "{plan:#}");
+    assert!(
+        writes.iter().all(|query| query.matches("CURRENT_DATE").count() == 1),
+        "{plan:#}"
+    );
+    assert!(queries.iter().all(|query| !query.contains("ON CONFLICT")), "{plan:#}");
+}
+
+#[test]
+fn current_date_nested_creates_and_updates_keep_the_existing_relation_plan() {
+    let plan = compile_model(
+        "DateExprProbe",
+        "createOne",
+        json!({ "data": {
+            "createdDate": { "currentDate": true },
+            "children": { "create": { "id": 7, "createdDate": { "currentDate": true } } },
+        } }),
+        json!({ "id": true, "createdDate": true }),
+    );
+    assert_eq!(expressions(&plan, "transaction").len(), 1, "{plan:#}");
+    let inserts: Vec<_> = statements(&plan)
+        .into_iter()
+        .map(sql)
+        .filter(|query| query.starts_with("INSERT INTO "))
+        .collect();
+    assert_eq!(inserts.len(), 2, "{plan:#}");
+    assert!(
+        inserts.iter().all(|query| query.matches("CURRENT_DATE").count() == 1),
+        "{plan:#}"
+    );
+    assert!(
+        inserts.iter().all(|query| query.contains("RETURNING \"ID\"")),
+        "{plan:#}"
+    );
+
+    let plan = compile_model(
+        "DateExprChild",
+        "updateOne",
+        json!({ "where": { "id": 7 }, "data": { "probe": { "update": { "usedDate": { "currentDate": true } } } } }),
+        json!({ "id": true, "probeId": true }),
+    );
+    assert_returned_identifier(&plan, "DATE_EXPR_PROBE", &["ID"]);
+    let updates: Vec<_> = statements(&plan)
+        .into_iter()
+        .map(sql)
+        .filter(|query| query.starts_with("UPDATE "))
+        .collect();
+    assert_eq!(updates.len(), 1, "{plan:#}");
+    assert!(updates[0].contains("\"USED_DATE\" = CURRENT_DATE"), "{plan:#}");
+}
+
+#[test]
+fn current_date_primary_key_update_uses_the_database_date_for_the_result_read() {
+    let plan = compile_model(
+        "DateKeyProbe",
+        "updateOne",
+        json!({
+            "where": { "date": "2024-03-04T00:00:00.000Z" },
+            "data": { "date": { "currentDate": true }, "value": "changed" },
+        }),
+        json!({ "date": true, "value": true }),
+    );
+    assert_returned_identifier(&plan, "DATE_KEY_PROBE", &["DATE_KEY"]);
+    let updates: Vec<_> = statements(&plan)
+        .into_iter()
+        .map(sql)
+        .filter(|query| query.starts_with("UPDATE "))
+        .collect();
+    assert_eq!(updates.len(), 1, "{plan:#}");
+    assert!(updates[0].contains("\"DATE_KEY\" = CURRENT_DATE"), "{plan:#}");
+}
+
+#[test]
+fn current_date_inputs_preserve_iso_tagged_dates_nullable_values_and_set_updates() {
+    for value in [
+        json!("2024-03-04T00:00:00.000Z"),
+        json!({ "$type": "DateTime", "value": "2024-03-04T00:00:00.000Z" }),
+        json!({ "$type": "Param", "value": { "name": "dateValue", "type": "DateTime" } }),
+    ] {
+        let plan = compile_model(
+            "DateExprProbe",
+            "createOne",
+            json!({ "data": { "createdDate": value, "usedDate": null } }),
+            json!({ "id": true, "createdDate": true, "usedDate": true }),
+        );
+        assert!(
+            statements(&plan)
+                .iter()
+                .all(|statement| !sql(statement).contains("CURRENT_DATE")),
+            "{plan:#}"
+        );
+    }
+
+    for value in [
+        json!("2024-03-04T00:00:00.000Z"),
+        json!({ "set": "2024-03-04T00:00:00.000Z" }),
+        Value::Null,
+        json!({ "set": null }),
+    ] {
+        let plan = compile_model(
+            "DateExprProbe",
+            "updateOne",
+            json!({ "where": { "id": 41 }, "data": { "usedDate": value } }),
+            json!({ "id": true, "usedDate": true }),
+        );
+        assert_returned_identifier(&plan, "DATE_EXPR_PROBE", &["ID"]);
+        assert!(
+            statements(&plan)
+                .iter()
+                .all(|statement| !sql(statement).contains("CURRENT_DATE")),
+            "{plan:#}"
+        );
+    }
+}
+
+#[test]
+fn current_date_write_inputs_reject_invalid_or_ambiguous_envelopes_and_plain_sql_strings() {
+    for value in [
+        json!("CURRENT_DATE"),
+        json!(true),
+        json!({}),
+        json!({ "currentDate": false }),
+        json!({ "currentDate": "true" }),
+        json!({ "currentDate": null }),
+        json!({ "currentDate": true, "set": "2024-03-04T00:00:00.000Z" }),
+        json!({ "currentDate": true, "unknown": true }),
+        json!({ "set": { "currentDate": true } }),
+        json!({ "currentDate": { "$type": "Param", "value": { "name": "flag", "type": "Boolean" } } }),
+    ] {
+        for action in ["createOne", "updateOne"] {
+            let arguments = if action == "createOne" {
+                json!({ "data": { "createdDate": value } })
+            } else {
+                json!({ "where": { "id": 41 }, "data": { "createdDate": value } })
+            };
+            let result = try_compile_model("DateExprProbe", action, arguments, json!({ "id": true }));
+            assert!(result.is_err(), "{action} accepted {value}: {result:?}");
+        }
+    }
+
+    for arguments in [json!({ "data": {} }), json!({ "data": { "createdDate": null } })] {
+        assert!(try_compile_model("DateExprProbe", "createOne", arguments, json!({ "id": true })).is_err());
+    }
+    for value in [Value::Null, json!({ "set": null })] {
+        assert!(
+            try_compile_model(
+                "DateExprProbe",
+                "updateOne",
+                json!({ "where": { "id": 41 }, "data": { "createdDate": value } }),
+                json!({ "id": true }),
+            )
+            .is_err()
+        );
+    }
+}
+
+#[test]
+fn current_date_native_date_inputs_remain_distinct_from_other_datetime_native_types_in_both_orders() {
+    for (first, second) in [("date", "timestamp"), ("timestamp", "date")] {
+        let fields = [first, second]
+            .into_iter()
+            .flat_map(|name| {
+                let native = if name == "date" { "Date" } else { "Timestamp" };
+                [
+                    format!("  {name} DateTime @db.{native}"),
+                    format!("  nullable{name} DateTime? @db.{native}"),
+                ]
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        let validated = psl::validate_without_extensions(
+            format!("datasource db {{\n provider = \"firebird\"\n}}\nmodel Probe {{\n id Int @id\n{fields}\n defaultTime DateTime?\n clockTime DateTime? @db.Time\n}}").into(),
+        );
+        assert!(
+            !validated.diagnostics.has_errors(),
+            "{}",
+            validated.render_own_diagnostics()
+        );
+        let schema = Arc::new(schema::build(Arc::new(validated), true));
+        let mutation = schema.find_mutation_field("updateOneProbe").unwrap();
+        let data = mutation
+            .arguments()
+            .iter()
+            .find(|argument| argument.name == "data")
+            .unwrap()
+            .field_types()
+            .iter()
+            .find_map(schema::InputType::as_object)
+            .unwrap();
+        for (date, timestamp) in [("date", "timestamp"), ("nullabledate", "nullabletimestamp")] {
+            let operations = |name: &str| {
+                data.get_fields()
+                    .iter()
+                    .find(|field| field.name == name)
+                    .unwrap()
+                    .field_types()
+                    .iter()
+                    .find_map(schema::InputType::as_object)
+                    .unwrap()
+            };
+            let date_operations = operations(date);
+            let timestamp_operations = operations(timestamp);
+            assert_ne!(
+                date_operations.identifier.name(),
+                timestamp_operations.identifier.name()
+            );
+            let current_date = date_operations
+                .get_fields()
+                .iter()
+                .find(|field| field.name == "currentDate")
+                .unwrap();
+            assert!(!current_date.is_parameterizable());
+            assert!(
+                timestamp_operations
+                    .get_fields()
+                    .iter()
+                    .all(|field| field.name != "currentDate")
+            );
+        }
+        for field in [
+            "date",
+            "nullabledate",
+            "timestamp",
+            "nullabletimestamp",
+            "defaultTime",
+            "clockTime",
+        ] {
+            let mut data = serde_json::Map::new();
+            data.insert(field.to_owned(), json!({ "currentDate": true }));
+            let result = try_compile_with_schema(
+                schema.clone(),
+                SqlFamily::Firebird,
+                "Probe",
+                "updateOne",
+                json!({ "where": { "id": 41 }, "data": data }),
+                json!({ "id": true }),
+            );
+            assert_eq!(
+                result.is_ok(),
+                field == "date" || field == "nullabledate",
+                "{first}/{field}: {result:?}"
+            );
+        }
+    }
+
+    for field in ["timestamp", "time"] {
+        let mut data = serde_json::Map::new();
+        data.insert("createdDate".to_owned(), json!({ "currentDate": true }));
+        data.insert(field.to_owned(), json!({ "currentDate": true }));
+        assert!(
+            try_compile_model(
+                "DateExprProbe",
+                "createOne",
+                json!({ "data": data }),
+                json!({ "id": true })
+            )
+            .is_err(),
+            "createOne accepted {field}"
+        );
+    }
+}
+
+#[test]
+fn current_date_write_input_remains_unavailable_on_other_connectors_with_native_date() {
+    for (provider, family) in [("postgresql", SqlFamily::Postgres), ("mysql", SqlFamily::Mysql)] {
+        let validated = psl::validate_without_extensions(
+            format!("datasource db {{\n provider = \"{provider}\"\n}}\nmodel Probe {{\n id Int @id\n date DateTime @db.Date\n}}").into(),
+        );
+        assert!(
+            !validated.diagnostics.has_errors(),
+            "{}",
+            validated.render_own_diagnostics()
+        );
+        let schema = Arc::new(schema::build(Arc::new(validated), true));
+        for action in ["createOne", "updateOne"] {
+            let arguments = if action == "createOne" {
+                json!({ "data": { "id": 41, "date": { "currentDate": true } } })
+            } else {
+                json!({ "where": { "id": 41 }, "data": { "date": { "currentDate": true } } })
+            };
+            assert!(
+                try_compile_with_schema(
+                    schema.clone(),
+                    family,
+                    "Probe",
+                    action,
+                    arguments,
+                    json!({ "id": true })
+                )
+                .is_err(),
+                "{provider}/{action}"
+            );
+        }
+    }
+}
+
+#[test]
 fn find_unique_uses_quoted_firebird_identifiers_and_a_bound_id() {
     let plan = compile(
         "findUnique",

@@ -1,3 +1,4 @@
+// Modified for experimental Firebird support (2026-10-20); see MODIFICATIONS.md.
 use crate::{
     CompositeFieldRef, Field, Filter, Model, ModelProjection, PrismaValue, ScalarFieldRef, SelectedField,
     SelectionResult,
@@ -55,6 +56,10 @@ pub enum WriteOperation {
 impl WriteOperation {
     pub fn scalar_set(pv: PrismaValue) -> Self {
         Self::Scalar(ScalarWriteOperation::Set(pv))
+    }
+
+    pub fn scalar_current_date() -> Self {
+        Self::Scalar(ScalarWriteOperation::CurrentDate)
     }
 
     pub fn scalar_unset(should_unset: bool) -> Self {
@@ -135,6 +140,9 @@ pub enum ScalarWriteOperation {
 
     /// Write plain value to field.
     Set(PrismaValue),
+
+    /// Evaluate the server's CURRENT_DATE in the write statement.
+    CurrentDate,
 
     /// Unsets a field (only for MongoDB for now)
     Unset(bool),
@@ -482,6 +490,7 @@ pub fn apply_expression(val: PrismaValue, scalar_write: ScalarWriteOperation) ->
     match scalar_write {
         ScalarWriteOperation::Field(_) => unimplemented!(),
         ScalarWriteOperation::Set(pv) => pv,
+        ScalarWriteOperation::CurrentDate => unreachable!("CURRENT_DATE must be evaluated by the database"),
         ScalarWriteOperation::Add(rhs) => val + rhs,
         ScalarWriteOperation::Subtract(rhs) => val - rhs,
         ScalarWriteOperation::Multiply(rhs) => val * rhs,

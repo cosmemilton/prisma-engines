@@ -1,3 +1,4 @@
+// Modified for experimental Firebird support (2026-10-20); see MODIFICATIONS.md.
 use super::*;
 use constants::*;
 use query_structure::CompositeFieldRef;
@@ -41,7 +42,12 @@ impl DataInputFieldMapper for UpdateDataInputFieldMapper {
             TypeIdentifier::Extension(_) => unreachable!("No extension field should reach this path"),
             TypeIdentifier::Json => map_scalar_input_type_for_field(ctx, &sf),
             TypeIdentifier::DateTime => {
-                InputType::object(update_operations_object_type(ctx, "DateTime", sf.clone(), false))
+                let prefix = if sf.supports_current_date_write() {
+                    "FirebirdDate"
+                } else {
+                    "DateTime"
+                };
+                InputType::object(update_operations_object_type(ctx, prefix, sf.clone(), false))
             }
             TypeIdentifier::UUID => InputType::object(update_operations_object_type(ctx, "Uuid", sf.clone(), false)),
             TypeIdentifier::Bytes => InputType::object(update_operations_object_type(ctx, "Bytes", sf.clone(), false)),
@@ -184,6 +190,10 @@ fn update_operations_object_type<'a>(
                 .nullable_if(!sf.is_required())
                 .parameterizable(),
         ];
+
+        if sf.supports_current_date_write() {
+            fields.push(simple_input_field(operations::CURRENT_DATE, InputType::boolean(), None).optional());
+        }
 
         if with_number_operators {
             fields.push(

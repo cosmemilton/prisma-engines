@@ -405,6 +405,10 @@ impl<'a> Visitor<'a> for Firebird<'a> {
         Err(Self::unsupported("row value IN predicates"))
     }
 
+    fn visit_current_date(&mut self) -> Result {
+        self.write("CURRENT_DATE")
+    }
+
     fn visit_function(&mut self, function: Function<'a>) -> Result {
         if function.alias.as_ref().is_some_and(|alias| alias.len() > 31) {
             return Err(Self::unsupported(
@@ -676,6 +680,51 @@ mod tests {
             "UPDATE \"User\" SET \"name\" = ?, \"score\" = (\"score\" + ?) WHERE \"id\" = ? RETURNING \"id\""
         );
         assert_eq!(params, vec![Value::from("renamed"), Value::from(2), Value::from(9)]);
+    }
+
+    #[test]
+    fn current_date_is_inline_in_insert_and_update_without_consuming_parameters() {
+        let insert: Insert = Insert::single_into("DATE_EXPR_PROBE")
+            .value("CREATED_DATE", current_date())
+            .value("STATUS", "1")
+            .into();
+        let (sql, params) = Firebird::build(insert.returning(["ID", "CREATED_DATE"])).unwrap();
+        assert_eq!(
+            sql,
+            "INSERT INTO \"DATE_EXPR_PROBE\" (\"CREATED_DATE\", \"STATUS\") VALUES (CURRENT_DATE,?) RETURNING \"ID\", \"CREATED_DATE\""
+        );
+        assert_eq!(params, vec![Value::from("1")]);
+
+        let update = Update::table("DATE_EXPR_PROBE")
+            .set("USED_DATE", current_date())
+            .set("STATUS", "2")
+            .so_that(Column::from("ID").equals(7))
+            .returning(["ID", "USED_DATE"]);
+        let (sql, params) = Firebird::build(update).unwrap();
+        assert_eq!(
+            sql,
+            "UPDATE \"DATE_EXPR_PROBE\" SET \"USED_DATE\" = CURRENT_DATE, \"STATUS\" = ? WHERE \"ID\" = ? RETURNING \"ID\", \"USED_DATE\""
+        );
+        assert_eq!(params, vec![Value::from("2"), Value::from(7)]);
+    }
+
+    #[test]
+    fn ordinary_current_date_string_remains_a_bound_value() {
+        let insert: Insert = Insert::single_into("DATE_EXPR_PROBE")
+            .value("CREATED_DATE", "CURRENT_DATE")
+            .into();
+        let (sql, params) = Firebird::build(insert).unwrap();
+        assert_eq!(sql, "INSERT INTO \"DATE_EXPR_PROBE\" (\"CREATED_DATE\") VALUES (?)");
+        assert_eq!(params, vec![Value::from("CURRENT_DATE")]);
+    }
+
+    #[test]
+    #[cfg(feature = "mysql")]
+    fn a_different_sql_visitor_rejects_current_date() {
+        let error = crate::visitor::Mysql::build(Select::default().value(current_date()))
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("CURRENT_DATE is not supported"), "{error}");
     }
 
     #[test]

@@ -25,6 +25,15 @@ does not contain these modifications.
   returned key for the transactional post-read. This includes key rewrites by
   `BEFORE UPDATE` triggers. Secondary or recursive key rewrites from `AFTER`
   triggers are outside the accepted contract. Bulk returning is disabled.
+- Native `@db.Date` fields accept `{ currentDate: true }` in create/update data.
+  The compiler emits the fixed `CURRENT_DATE` token within the same write, without
+  a clock query, client date calculation or arbitrary SQL input. Only `true` is
+  valid; normal DateTime/ISO values, nullable fields and `set` updates retain their
+  existing contracts. TIMESTAMP, TIME and other providers do not expose this
+  operation. The generated Boolean input also admits `false` at type-check time;
+  runtime validation rejects it before SQL. Rebuild both schema and query-compiler
+  Wasm and regenerate Client; the adapter and schema-engine need no change for
+  this expression.
 - Schema introspection and migration operations for the representable subset of
   persistent tables, columns, keys, indexes and defaults. Datamodel-to-datamodel
   or empty-target diffing also has an offline Wasm API, without a datasource URL.
